@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from rag_router.backends.base import RagBackend, SearchHit
@@ -175,6 +176,28 @@ class RagRouter:
         """Dokumente in ein konfiguriertes RAG indexieren."""
         backend = self._backends[rag_key]
         return backend.index_texts(texts, ids=ids)
+
+    def index_texts_from_file(self, rag_key: str, path: str | Path) -> int:
+        """Dokumente aus JSON-Datei indexieren.
+
+        Format: {"documents": [{"id": str, "text": str}, ...]} oder
+        {"texts": [str, ...]}.
+        """
+        import json
+
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        if isinstance(data, dict) and "documents" in data:
+            documents = data["documents"]
+            texts = [doc["text"] for doc in documents]
+            ids = [str(doc.get("id", i)) for i, doc in enumerate(documents)]
+        elif isinstance(data, dict) and "texts" in data:
+            texts = [str(t) for t in data["texts"]]
+            ids = None
+        else:
+            raise ValueError(
+                f"{path}: erwartet {{'documents': [...]}} oder {{'texts': [...]}}"
+            )
+        return self.index_texts(rag_key, texts, ids=ids)
 
 
 def _make_decision(config: RouterConfig) -> DecisionBackend:
