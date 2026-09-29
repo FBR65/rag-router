@@ -167,13 +167,13 @@ def route_accuracy(
         if s.gold_route == "":
             hits += 1  # nur die Skip-Entscheidung bewertbar
             continue
-        leader = max(s.kb, key=s.kb.get, default=None)
+        leader = max(s.kb, key=lambda k: s.kb[k], default=None)
         if leader is None:
             continue
         if s.kb.get(leader, 0.0) >= thresholds.fanout:
             chosen = [leader]
         else:
-            ranked = sorted(s.kb, key=s.kb.get, reverse=True)
+            ranked = sorted(s.kb, key=lambda k: s.kb[k], reverse=True)
             chosen = ranked[:2]
         if s.gold_route in chosen:
             hits += 1

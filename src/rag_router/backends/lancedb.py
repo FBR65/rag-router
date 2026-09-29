@@ -82,7 +82,7 @@ class LanceDbBackend:
         self._fts_language = fts_language
         self._reranker = reranker
         self._vector_dim = vector_dim
-        self._table = None
+        self._table: Any = None
 
     # -- Indexierung -----------------------------------------------------
 

@@ -105,7 +105,7 @@ class LlmDecisionBackend:
         )
         choice = response.choices[0]
         logprobs = choice.logprobs
-        score_map = None
+        score_map: dict[str, float] | None = None
         if logprobs is not None and logprobs.content:
             score_map = {}
             for entry in logprobs.content[0].top_logprobs or ():

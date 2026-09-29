@@ -4,19 +4,22 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-echo "== 1/5 Unit-Suite (randomisiert) =="
+echo "== 1/6 Unit-Suite (randomisiert) =="
 uv run pytest -q
 
-echo "== 2/5 Lint =="
+echo "== 2/6 Lint =="
 uv run ruff check src/ tests/
 
-echo "== 3/5 Coverage (Unit) =="
+echo "== 3/6 Statische Typen =="
+uv run mypy
+
+echo "== 4/6 Coverage (Unit) =="
 uv run pytest -q --cov=rag_router --cov-report=term-missing
 
-echo "== 4/5 Mutation (7 Mutanten) =="
+echo "== 5/6 Mutation (7 Mutanten) =="
 bash scripts/mutation_check.sh
 
-echo "== 5/5 Integration (nur mit Endpoint) =="
+echo "== 6/6 Integration (nur mit Endpoint) =="
 if [ -n "${RR_ROUTER_SLM_BASE_URL:-}" ]; then
   uv run pytest -m integration -q
 else
