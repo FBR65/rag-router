@@ -25,6 +25,54 @@ class RouteDist:
     probabilities_source: str = "probabilities"
 
 
+@dataclass(frozen=True)
+class SkipDist:
+    """Ergebnis der Skip-Entscheidung (D1).
+
+    p_recall = P(Dokumentrecherche noetig); p_none = 1 - p_recall.
+    """
+
+    p_recall: float
+    raw: Any = field(default=None, repr=False, compare=False)
+    source: str = "probabilities"
+    detail: Mapping[str, str] = field(default_factory=dict)
+
+    @property
+    def p_none(self) -> float:
+        return 1.0 - self.p_recall
+
+
+@dataclass(frozen=True)
+class KbDist:
+    """Ergebnis der KB-Wahl (D2): Verteilung NUR ueber die RAG-Keys.
+
+    Enthaelt bewusst keinen 'none'-Key — die Skip-Entscheidung ist davon
+    getrennt (D1). Summe der Werte ~1.
+    """
+
+    probabilities: Mapping[str, float]
+    raw: Any = field(default=None, repr=False, compare=False)
+    source: str = "probabilities"
+    detail: Mapping[str, str] = field(default_factory=dict)
+
+
+@runtime_checkable
+class DecisionRoute(Protocol):
+    """Ein Weg zur Entscheidung: D1 (skip) und D2 (choose) nativ getrennt."""
+
+    name: str
+
+    def skip(
+        self, question: str, rag_descriptions: Mapping[str, str] | None = None
+    ) -> SkipDist: ...
+
+    def choose(
+        self, question: str, rag_descriptions: Mapping[str, str]
+    ) -> KbDist: ...
+
+
+
+
 @runtime_checkable
 class DecisionBackend(Protocol):
     """Ein Backend, das Fragen auf Routen verteilt."""
