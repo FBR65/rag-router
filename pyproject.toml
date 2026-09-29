@@ -1,0 +1,48 @@
+[project]
+name = "rag-router"
+version = "0.1.0"
+description = "Generischer RAG-Router: Laya-Decisions, N konfigurierbare RAGs (LanceDB, bge-m3, hybrid + RRF)"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "FBR65", email = "frank.b.reis@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "flagembedding>=1.4.2",
+    "lancedb>=0.25",
+    "numpy>=2.5.3",
+    "openai>=3.20.0",
+    "pyyaml>=6.0.3",
+    "rank-bm25>=0.2.2",
+    "scipy>=1.18.1",
+    "transformers>=4.44.2,<5.0.0",
+    "torch>=2.5.0",
+]
+
+[tool.uv]
+# Kein NVIDIA-GPU auf dem Host — CPU-Wheels von der PyTorch-CPU-Seite,
+# spart ~2,5 GB CUDA-Runtime im venv (Frank freigegeben: P1 Scaffold).
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[project.scripts]
+rag-router = "rag_router:main"
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "pytest-randomly>=5.0.0",
+    "ruff>=0.16.9",
+]
