@@ -64,17 +64,95 @@ def _renormalize(
 
 
 class RouterDecisionEngine:
-    """Fuehrt die zweistufige Routing-Entscheidung aus."""
+    """Fuehrt die zweistufige Routing-Entscheidung aus.
+
+    Akzeptiert entweder einen ``DecisionRoute`` (D1/D2 getrennt, neuer Weg)
+    oder ein Legacy-``DecisionBackend`` (eine Verteilung inkl. 'none'). Der
+    Legacy-Pfad ist bit-identisch zum bisherigen Verhalten.
+    """
 
     def __init__(self, backend, thresholds: DecisionThresholds | None = None):
         self._backend = backend
         self._thresholds = thresholds or DecisionThresholds()
+        self._is_route = hasattr(backend, "skip") and hasattr(backend, "choose")
 
     @property
     def thresholds(self) -> DecisionThresholds:
         return self._thresholds
 
+    def set_thresholds(self, thresholds: DecisionThresholds) -> None:
+        self._thresholds = thresholds
+
+    def set_backend(self, backend) -> None:
+        self._backend = backend
+        self._is_route = hasattr(backend, "skip") and hasattr(backend, "choose")
+
+    @property
+    def backend(self):
+        return self._backend
+
+    @property
+    def is_route(self) -> bool:
+        return self._is_route
+
     def route(self, question: str) -> RouteDecision:
+        if self._is_route:
+            return self._route_split(question)
+        return self._route_legacy(question)
+
+    def _route_split(self, question: str) -> RouteDecision:
+        """Neuer Weg: D1 (skip) und D2 (choose) getrennt."""
+        skip = self._backend.skip(question, self._rag_descriptions)
+        p_none = float(skip.p_none)
+        if p_none < 0.0 or p_none > 1.0:
+            raise ValueError(f"p_none ausserhalb [0, 1]: {p_none}")
+        if p_none >= self._thresholds.skip:
+            return RouteDecision(
+                routes=["none"],
+                distribution={"none": p_none},
+                reason="skip",
+                detail={"p_none": f"{p_none:.4f}", "source": skip.source},
+            )
+        kb = self._backend.choose(question, self._rag_descriptions)
+        probabilities = dict(kb.probabilities)
+        if not probabilities:
+            return RouteDecision(
+                routes=["none"],
+                distribution={"none": p_none},
+                reason="no_rag_mass",
+            )
+        negatives = [k for k, v in probabilities.items() if v < 0.0]
+        if negatives:
+            raise ValueError(f"negative Wahrscheinlichkeiten für {sorted(negatives)}")
+        ranked = _renormalize(probabilities)
+        if not ranked:
+            return RouteDecision(
+                routes=["none"],
+                distribution={"none": p_none},
+                reason="no_rag_mass",
+            )
+        if ranked[0][1] < self._thresholds.fanout and len(ranked) >= 2:
+            routes = [ranked[0][0], ranked[1][0]]
+            reason = "fanout"
+        else:
+            routes = [ranked[0][0]]
+            reason = "clear_leader"
+        distribution = {key: value for key, value in ranked}
+        distribution["none"] = p_none
+        detail = {
+            "p_none": f"{p_none:.4f}",
+            "kb_share": f"{ranked[0][1]:.4f}",
+            "source": skip.source,
+        }
+        detail.update({f"stage:{k}": v for k, v in kb.detail.items()})
+        return RouteDecision(
+            routes=routes,
+            distribution=distribution,
+            reason=reason,
+            detail=detail,
+        )
+
+    def _route_legacy(self, question: str) -> RouteDecision:
         dist: RouteDist = self._backend.decide(question, self._rag_descriptions)
         probabilities = dict(dist.probabilities)
 

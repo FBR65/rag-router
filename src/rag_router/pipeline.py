@@ -13,17 +13,31 @@ Oder komplett injiziert (Tests, eigene Backends):
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from datetime import UTC
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from rag_router.backends.base import RagBackend, SearchHit
 from rag_router.backends.lancedb import registry
+from rag_router.calibration import (
+    FALLBACK_ANSWER,
+    FALLBACK_FANOUT,
+    FALLBACK_SKIP,
+    CalibrationProfile,
+    CalibrationSample,
+    choose_best_answer_backend,
+    choose_best_route,
+    derive,
+)
 from rag_router.checking.base import AnswerChecker, CheckResult
 from rag_router.config import RouterConfig
 from rag_router.decision.base import DecisionBackend
 from rag_router.router import DecisionThresholds, RouterDecisionEngine
+
+CALIBRATION_DATA = Path(__file__).parent / "data" / "calibration_de.json"
 
 
 @dataclass(frozen=True)
@@ -48,24 +62,24 @@ class RagRouter:
     def __init__(
         self,
         config: RouterConfig,
-        decision: DecisionBackend,
+        decision: Any,
         backends: Mapping[str, RagBackend],
         checker: AnswerChecker,
+        *,
+        calibration: CalibrationProfile | None = None,
     ) -> None:
         self._config = config
+        skip, fanout, answer = _resolve_thresholds(config, calibration)
         self._engine = RouterDecisionEngine(
             decision,
-            thresholds=DecisionThresholds(
-                skip=config.thresholds.skip,
-                fanout=config.thresholds.fanout,
-                answer=config.thresholds.answer,
-            ),
+            thresholds=DecisionThresholds(skip=skip, fanout=fanout, answer=answer),
         )
         self._engine.set_rag_descriptions(
             {key: rag.description for key, rag in config.rags.items()}
         )
         self._backends = dict(backends)
         self._checker = checker
+        self._calibration = calibration
 
     # -- Konstruktion ----------------------------------------------------
 
@@ -73,9 +87,11 @@ class RagRouter:
     def injected(
         cls,
         config: RouterConfig,
-        decision: DecisionBackend,
+        decision: Any,
         backends: Mapping[str, RagBackend],
         checker: AnswerChecker,
+        *,
+        calibration: CalibrationProfile | None = None,
     ) -> RagRouter:
         """Komplett injiziert (Tests, Hosts mit eigenen Backends).
 
@@ -83,7 +99,9 @@ class RagRouter:
         ein fehlendes Backend bricht erst beim Zugriff auf die geroutete
         Route mit einer klaren Meldung.
         """
-        return cls(config, decision, dict(backends), checker)
+        return cls(
+            config, decision, dict(backends), checker, calibration=calibration
+        )
 
     @classmethod
     def from_config(
@@ -116,9 +134,12 @@ class RagRouter:
                 reranker=reranker,
                 fts_language=fts_language,
             )
-        decision = _make_decision(config)
-        checker = _make_checker(config)
-        return cls(config, decision, backends, checker)
+        decision, checker, calibration = _build_decision_and_checker(
+            config, backends
+        )
+        return cls(
+            config, decision, backends, checker, calibration=calibration
+        )
 
     # -- Kern ------------------------------------------------------------
 
@@ -200,28 +221,51 @@ class RagRouter:
         return self.index_texts(rag_key, texts, ids=ids)
 
 
-def _make_decision(config: RouterConfig) -> DecisionBackend:
-    if config.backend == "laya":
-        from rag_router.decision.laya import LayaDecisionBackend
+def _make_laya_route(config: RouterConfig):
+    from rag_router.decision.route import LayaRoute
 
-        return LayaDecisionBackend.from_laya(
-            model=config.laya.model if config.laya else "multilingual",
-            max_len=config.laya.max_len if config.laya else 1024,
-            preload=config.laya.preload if config.laya else False,
-        )
-    from rag_router.decision.llm import LlmDecisionBackend
-
-    llm = config.llm
-    if llm is None:
-        raise ValueError("llm-Backend benoetigt router.llm-Konfiguration")
-    return LlmDecisionBackend.from_settings(
-        base_url=llm.base_url, api_key=llm.api_key, model=llm.model
+    return LayaRoute.from_laya(
+        model=config.laya.model if config.laya else "multilingual",
+        max_len=config.laya.max_len if config.laya else 1024,
+        preload=config.laya.preload if config.laya else False,
     )
 
 
-def _make_checker(config: RouterConfig) -> AnswerChecker:
-    # Answer-Check folgt dem Decision-Backend (gleiche Runtime)
-    if config.backend == "laya":
+def _make_slm_route(config: RouterConfig):
+    from rag_router.decision.route import SlmRoute
+
+    slm = config.slm or config.llm
+    if slm is None:
+        raise ValueError("slm-Weg benoetigt router.slm/llm-Konfiguration")
+    return SlmRoute.from_settings(
+        base_url=slm.base_url, api_key=slm.api_key, model=slm.model
+    )
+
+
+def _make_route(config: RouterConfig):
+    """Baut den konfigurierten Weg (laya|slm|hybrid|auto->laya)."""
+    from rag_router.decision.route import HybridRoute
+
+    route_name = config.decision_route
+    if route_name == "laya":
+        return _make_laya_route(config)
+    if route_name == "slm":
+        return _make_slm_route(config)
+    if route_name == "hybrid":
+        return HybridRoute(
+            _make_laya_route(config),
+            _make_slm_route(config),
+            strategy=config.hybrid.strategy if config.hybrid.strategy != "auto" else "cascade",
+            aggregate=config.hybrid.aggregate,
+            cascade_lo=config.hybrid.cascade_lo if config.hybrid.cascade_lo is not None else 0.40,
+            cascade_hi=config.hybrid.cascade_hi if config.hybrid.cascade_hi is not None else 0.60,
+        )
+    # auto: Laya als Basis; die Kalibrierung darf auf slm/hybrid umschalten.
+    return _make_laya_route(config)
+
+
+def _make_checker_for(config: RouterConfig, backend: str) -> AnswerChecker:
+    if backend == "laya":
         from rag_router.checking.laya import LayaAnswerChecker
 
         return LayaAnswerChecker.from_laya(
@@ -231,12 +275,209 @@ def _make_checker(config: RouterConfig) -> AnswerChecker:
         )
     from rag_router.checking.llm import LlmAnswerChecker
 
-    llm = config.llm
-    if llm is None:
-        raise ValueError("llm-Checker benoetigt router.llm-Konfiguration")
+    slm = config.slm or config.llm
+    if slm is None:
+        raise ValueError("slm-Checker benoetigt router.slm/llm-Konfiguration")
     return LlmAnswerChecker.from_settings(
-        base_url=llm.base_url, api_key=llm.api_key, model=llm.model
+        base_url=slm.base_url, api_key=slm.api_key, model=slm.model
     )
+
+
+def _resolve_thresholds(
+    config: RouterConfig, calibration: CalibrationProfile | None
+) -> tuple[float, float, float]:
+    """Zahlen aus Config; None ('auto') aus dem Profil oder Fallback."""
+    skip = config.thresholds.skip
+    fanout = config.thresholds.fanout
+    answer = config.thresholds.answer
+    if skip is None:
+        skip = calibration.skip if calibration else FALLBACK_SKIP
+    if fanout is None:
+        fanout = calibration.fanout if calibration else FALLBACK_FANOUT
+    if answer is None:
+        answer = calibration.answer if calibration else FALLBACK_ANSWER
+    return float(skip), float(fanout), float(answer)
+
+
+def _load_calibration_questions(config: RouterConfig) -> list[dict[str, Any]]:
+    path = config.calibration.questions
+    source = Path(path) if path else CALIBRATION_DATA
+    data = json.loads(source.read_text(encoding="utf-8"))
+    questions = data["questions"]
+    return questions[: config.calibration.max_questions]
+
+
+def _measure_route(route, questions, rag_descriptions) -> list[CalibrationSample]:
+    samples: list[CalibrationSample] = []
+    for q in questions:
+        skip = route.skip(q["question"], rag_descriptions)
+        kb = route.choose(q["question"], rag_descriptions)
+        samples.append(
+            CalibrationSample(
+                question_id=q["id"],
+                gold_route=q.get("gold_route", "none"),
+                answerable=bool(q.get("answerable", q.get("needs_retrieval", False))),
+                skip_p_none=float(skip.p_none),
+                kb=dict(kb.probabilities),
+            )
+        )
+    return samples
+
+
+def _build_decision_and_checker(
+    config: RouterConfig, backends: Mapping[str, RagBackend]
+):
+    """Baut Weg, Checker und (falls konfiguriert) das Kalibrierungsprofil.
+
+    Faellt bei fehlender Messung auf den dokumentierten Kaltstart zurueck;
+    der Router laeuft immer.
+    """
+    rag_descriptions = {key: rag.description for key, rag in config.rags.items()}
+    cache = Path(config.calibration.cache)
+
+    def _load_cache() -> CalibrationProfile | None:
+        if not cache.is_file():
+            return None
+        try:
+            return CalibrationProfile.from_dict(
+                json.loads(cache.read_text(encoding="utf-8"))
+            )
+        except (OSError, ValueError, KeyError):
+            return None
+
+    profile: CalibrationProfile | None = None
+    if config.decision_route == "auto" and config.calibration.enabled:
+        profile = _load_cache()
+        if profile is None:
+            profile = _run_calibration(config, rag_descriptions)
+            if profile is not None:
+                try:
+                    cache.write_text(
+                        json.dumps(profile.to_dict(), ensure_ascii=False, indent=2),
+                        encoding="utf-8",
+                    )
+                except OSError:
+                    pass
+
+    try:
+        route = _select_route(config, profile)
+        route_name = getattr(route, "name", config.decision_route)
+    except Exception:  # noqa: BLE001 — Kaltstart: Router darf nie blockieren
+        route = _make_laya_route(config)
+        route_name = "laya"
+        profile = None
+
+    if route_name == "legacy":
+        route_name = "laya"
+    answer_backend = _answer_backend(config, profile)
+    # Auto-Schwellen aus dem Profil in die Config-Werte uebernehmen:
+    checker = _make_checker_for(config, answer_backend)
+    return route, checker, profile
+
+
+def _select_route(config: RouterConfig, profile: CalibrationProfile | None):
+    if config.decision_route != "auto" or profile is None:
+        return _make_route(config)
+    if profile.decision_route == "slm":
+        return _make_slm_route(config)
+    if profile.decision_route == "hybrid":
+        from rag_router.decision.route import HybridRoute
+
+        return HybridRoute(
+            _make_laya_route(config),
+            _make_slm_route(config),
+            strategy="cascade",
+            aggregate=config.hybrid.aggregate,
+            cascade_lo=profile.cascade_lo,
+            cascade_hi=profile.cascade_hi,
+        )
+    return _make_laya_route(config)
+
+
+def _answer_backend(config: RouterConfig, profile: CalibrationProfile | None) -> str:
+    if config.answer_backend != "auto":
+        return config.answer_backend
+    if profile is not None:
+        return profile.answer_backend
+    return "laya" if config.decision_route in ("laya", "auto") else "slm"
+
+
+def _run_calibration(
+    config: RouterConfig, rag_descriptions: Mapping[str, str]
+) -> CalibrationProfile | None:
+    """Einmalige Messung aller verfuegbaren Wege -> Profil (oder None)."""
+    try:
+        questions = _load_calibration_questions(config)
+    except (OSError, ValueError, KeyError):
+        return None
+    routes = {"laya": _make_laya_route(config)}
+    if config.slm is not None or config.llm is not None:
+        routes["slm"] = _make_slm_route(config)
+    samples: dict[str, list[CalibrationSample]] = {}
+    thresholds: dict[str, Any] = {}
+    try:
+        for name, route in routes.items():
+            route_samples = _measure_route(route, questions, rag_descriptions)
+            samples[name] = route_samples
+            thresholds[name] = derive(route_samples)
+    except Exception:  # noqa: BLE001 — Messung darf den Start nicht brechen
+        return None
+    best = choose_best_route(samples, thresholds)
+    thr = thresholds[best.name]
+    answer_scores = _answer_backend_scores(config, questions)
+    answer_backend = choose_best_answer_backend(answer_scores).name
+    from datetime import datetime
+
+    return CalibrationProfile(
+        decision_route=best.name,
+        answer_backend=answer_backend,
+        skip=thr.skip,
+        fanout=thr.fanout,
+        answer=thr.answer,
+        cascade_lo=thr.cascade_lo,
+        cascade_hi=thr.cascade_hi,
+        created_at=datetime.now(UTC).isoformat(),
+        sources={
+            "best_route": best.name,
+            "route_accuracy": best.accuracy,
+            "answer_scores": answer_scores,
+            "derived": dict(thr.sources),
+        },
+    )
+
+
+def _answer_backend_scores(
+    config: RouterConfig, questions: list[dict[str, Any]]
+) -> dict[str, float]:
+    """Einfache Messung: Anteil korrekt erkannter 'needs_retrieval'."""
+    candidates: dict[str, AnswerChecker] = {}
+    laya = _try_checker_build("laya", config)
+    if laya is not None:
+        candidates["laya"] = laya
+    if config.slm is not None or config.llm is not None:
+        slm = _try_checker_build("slm", config)
+        if slm is not None:
+            candidates["slm"] = slm
+    scores: dict[str, float] = {}
+    for name, checker in candidates.items():
+        correct = 0
+        for q in questions:
+            passages = [q["question"]]
+            result = checker.check(q["question"], passages)
+            predicted = result.p_answered >= 0.5
+            expected = bool(q.get("needs_retrieval", False))
+            if predicted == expected:
+                correct += 1
+        scores[name] = correct / max(1, len(questions))
+    return scores
+
+
+def _try_checker_build(backend: str, config: RouterConfig) -> AnswerChecker | None:
+    """Baut einen Checker; gibt None zurueck, wenn er nicht verfuegbar ist."""
+    try:
+        return _make_checker_for(config, backend)
+    except (ImportError, RuntimeError, ValueError, TypeError, OSError):
+        return None
 
 
 def _make_reranker() -> Any:

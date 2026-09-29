@@ -5,11 +5,14 @@ import pytest
 from rag_router.backends.base import SearchHit
 from rag_router.checking.base import CheckResult
 from rag_router.config import RagBackendConfig, RagConfig, RouterConfig, Thresholds
-from rag_router.decision.base import RouteDist
+from rag_router.decision.base import KbDist, RouteDist, SkipDist
 from rag_router.pipeline import RagRouter, RouterResult
 
 
-def make_config(rags: dict[str, RagConfig] | None = None) -> RouterConfig:
+def make_config(
+    rags: dict[str, RagConfig] | None = None,
+    thresholds: Thresholds | None = None,
+) -> RouterConfig:
     if rags is None:
         rags = {
             "policy": RagConfig(
@@ -33,7 +36,7 @@ def make_config(rags: dict[str, RagConfig] | None = None) -> RouterConfig:
         backend="laya",
         laya=None,  # type: ignore[arg-type]
         llm=None,
-        thresholds=Thresholds(),
+        thresholds=thresholds if thresholds is not None else Thresholds(),
         defaults=None,  # type: ignore[arg-type]
         rags=rags,
     )
@@ -176,3 +179,100 @@ class TestRespectsTopK:
 
         router.route_and_fetch("F", top_k=1)
         assert counting.last_top_k == 1  # Override
+
+
+class SplitDecision:
+    """Neuer Vertrag: D1/D2 getrennt (kein 'none' in choose)."""
+
+    def __init__(self, p_recall: float, kb: dict[str, float]) -> None:
+        self._p_recall = p_recall
+        self._kb = kb
+
+    def skip(self, question, rag_descriptions=None):
+        return SkipDist(p_recall=self._p_recall, source="test")
+
+    def choose(self, question, rag_descriptions):
+        return KbDist(probabilities=dict(self._kb), source="test")
+
+
+class TestSplitRoute:
+    def test_skip_when_low_recall(self) -> None:
+        router = RagRouter.injected(
+            config=make_config(),
+            decision=SplitDecision(0.1, {"policy": 0.9, "news": 0.1}),
+            backends={"policy": FakeBackend("policy", ["p"])},
+            checker=FakeChecker(0.9),
+        )
+        assert router.route("F").reason == "skip"
+        assert router.route_and_fetch("F").final == "no_retrieval"
+
+    def test_choose_without_none(self) -> None:
+        router = RagRouter.injected(
+            config=make_config(),
+            decision=SplitDecision(0.9, {"policy": 0.8, "news": 0.2}),
+            backends={"policy": FakeBackend("policy", ["p"])},
+            checker=FakeChecker(0.9),
+        )
+        decision = router.route("F")
+        assert decision.routes == ["policy"]
+        # distribution enthaelt den none-Anteil (aus p_none) fuer Kompatibilitaet
+        assert decision.distribution["none"] == pytest.approx(0.1)
+
+    def test_fanout_from_split(self) -> None:
+        router = RagRouter.injected(
+            config=make_config(),
+            decision=SplitDecision(0.9, {"policy": 0.30, "news": 0.28}),
+            backends={"policy": FakeBackend("policy", ["p"])},
+            checker=FakeChecker(0.9),
+        )
+        assert router.route("F").routes == ["policy", "news"]
+
+
+class TestAutoCalibration:
+    def test_auto_thresholds_from_profile(self) -> None:
+        from rag_router.calibration import CalibrationProfile
+
+        profile = CalibrationProfile(
+            decision_route="laya",
+            answer_backend="laya",
+            skip=0.1,
+            fanout=0.2,
+            answer=0.5,
+            cascade_lo=0.4,
+            cascade_hi=0.6,
+        )
+        cfg = make_config(thresholds=Thresholds(skip=None, fanout=None, answer=None))
+        router = RagRouter.injected(
+            config=cfg,
+            decision=SplitDecision(0.85, {"policy": 0.9, "news": 0.1}),
+            backends={"policy": FakeBackend("policy", ["p"])},
+            checker=FakeChecker(0.9),
+            calibration=profile,
+        )
+        # skip=0.1 (auto aus Profil) -> p_none=0.15 >= 0.1 -> skip
+        assert router.route("F").reason == "skip"
+        assert router._calibration is profile
+
+    def test_profile_to_dict_roundtrip_in_router(self) -> None:
+        from rag_router.calibration import CalibrationProfile
+
+        profile = CalibrationProfile(
+            decision_route="slm",
+            answer_backend="slm",
+            skip=0.7,
+            fanout=0.6,
+            answer=0.4,
+            cascade_lo=0.3,
+            cascade_hi=0.8,
+        )
+        cfg = make_config(thresholds=Thresholds(skip=None, fanout=None, answer=None))
+        router = RagRouter.injected(
+            config=cfg,
+            decision=SplitDecision(0.8, {"policy": 0.9, "news": 0.1}),
+            backends={"policy": FakeBackend("policy", ["p"])},
+            checker=FakeChecker(0.9),
+            calibration=profile,
+        )
+        decision = router.route("F")
+        # p_none = 0.2 < 0.7 -> suchen
+        assert "none" not in decision.routes
