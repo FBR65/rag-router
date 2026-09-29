@@ -44,13 +44,15 @@ def laden(tmp_path_factory):
     config = load_config(cfg_path)
     router = RagRouter.from_config(config)
 
-    corpus = json.loads(
-        (FIXTURES / "corpus_de.json").read_text(encoding="utf-8")
-    )
-    buckets: dict[str, list[dict]] = {"gemeinde": [], "firma": [], "dienste": []}
-    for doc in corpus["documents"]:
-        buckets[doc["id"][:3]].append(doc)  # gem/fir/die-Prefix
+    corpus = json.loads((FIXTURES / "corpus_de.json").read_text(encoding="utf-8"))
+    # Keys und Lookup aus EINER Quelle: id-Prefix -> RAG-Key.
     mapping = {"gem": "gemeinde", "fir": "firma", "die": "dienste"}
+    buckets: dict[str, list[dict]] = {prefix: [] for prefix in mapping}
+    for doc in corpus["documents"]:
+        prefix = doc["id"][:3]
+        if prefix not in buckets:
+            raise AssertionError(f"unbekannter Korpus-Prefix: {doc['id']}")
+        buckets[prefix].append(doc)
     for prefix, rag_key in mapping.items():
         docs = buckets[prefix]
         ids = [d["id"] for d in docs]
@@ -59,9 +61,9 @@ def laden(tmp_path_factory):
     return router, tmp_path
 
 
-QUESTIONS = json.loads(
-    (FIXTURES / "questions_de.json").read_text(encoding="utf-8")
-)["questions"]
+QUESTIONS = json.loads((FIXTURES / "questions_de.json").read_text(encoding="utf-8"))[
+    "questions"
+]
 
 
 def _questions(route: str | None, answerable: bool | None = None):
@@ -78,21 +80,12 @@ def _questions(route: str | None, answerable: bool | None = None):
 class TestLayaPipeline:
     def test_no_retrieval_questions(self, laden) -> None:
         router, _ = laden
-        skipped = 0
-        latencies = []
-        for q in _questions(None):
-            result = router.route_and_fetch(q["question"])
-            latencies.append(result.detail.get("latency", 0))
-            if result.final == "no_retrieval" or q["answerable"] is False:
-                skipped += 1
-        # Artikel-Standard: keine der 8 no-retrieval-Fragen erzeugt Suche
-        # (skip). Wir erlauben nicht, dass eine einzige davon in eine
-        # Wissensbasis geht UND p(answered) >= 0.5 erreicht.
+        # Nur die 8 no-retrieval-Fragen: alle muessen auf "none" routen.
         routes = [
-            router.route(q["question"]).routes
-            for q in _questions(None)
+            (q["id"], router.route(q["question"]).routes) for q in _questions("none")
         ]
-        assert all(r == ["none"] for r in routes), routes
+        bad = [(qid, r) for qid, r in routes if r != ["none"]]
+        assert not bad, f"kein Skip bei: {bad}"
 
     def test_answerable_questions_reach_gold_route(self, laden) -> None:
         router, _ = laden
@@ -107,7 +100,7 @@ class TestLayaPipeline:
             "in der richtigen Wissensbasis (Laya multilingual)"
         )
 
-    def test_answer_check_catches_unanswerable(self, laden) -> None:
+    def test_answer_check_passes_answerable(self, laden) -> None:
         router, _ = laden
         found = 0
         for q in _questions(None, answerable=True):
@@ -153,7 +146,9 @@ class OllamaGate:
 
 
 class TestLlmPipeline:
-    def test_llm_pipeline_with_ollama_cloud(self, laden, monkeypatch, tmp_path_factory) -> None:
+    def test_llm_pipeline_with_ollama_cloud(
+        self, monkeypatch, tmp_path_factory
+    ) -> None:
         reason = OllamaGate.skip_reason()
         if reason:
             pytest.skip(reason)
@@ -165,21 +160,24 @@ class TestLlmPipeline:
         example = Path(__file__).parent.parent / "config.example.yaml"
         text = example.read_text(encoding="utf-8")
         text = text.replace("decision_backend: laya", "decision_backend: llm")
-        text = text.replace(
-            "db: ./data/lancedb", f"db: {tmp_path / 'lancedb'}"
+        text = text.replace("db: ./data/lancedb", f"db: {tmp_path / 'lancedb'}")
+        # laya-Block durch llm-Block ERSETZEN (gleiches level, keine
+        # Duplicate-Keys, thresholds bleiben erhalten):
+        import re
+
+        text = re.sub(
+            r"(  laya:\n(?:    .*\n)+)",
+            (
+                "  llm:\n"
+                f"    base_url: {base}\n"
+                f'    api_key: "{key or "not-needed"}"\n'
+                f"    model: {model}\n"
+            ),
+            text,
+            count=1,
         )
-        llm_block = f"""
-router:
-  decision_backend: llm
-  llm:
-    base_url: {base}
-    api_key: {key or "not-needed"}
-    model: {model}
-"""
-        # llm-Config vor rags einsetzen, laya-Backend-Block ersetzen
         target = tmp_path / "c.yaml"
-        target.write_text(text + "\n" + llm_block, encoding="utf-8")
-        monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+        target.write_text(text, encoding="utf-8")
 
         from rag_router.config import ConfigError
 
@@ -188,9 +186,7 @@ router:
         except ConfigError as error:
             pytest.skip(f"llm-Config nicht gueltig: {error}")
         router = RagRouter.from_config(config)
-        corpus = json.loads(
-            (FIXTURES / "corpus_de.json").read_text(encoding="utf-8")
-        )
+        corpus = json.loads((FIXTURES / "corpus_de.json").read_text(encoding="utf-8"))
         mapping = {"gem": "gemeinde", "fir": "firma", "die": "dienste"}
         for prefix, rag_key in mapping.items():
             docs = [d for d in corpus["documents"] if d["id"].startswith(prefix)]
