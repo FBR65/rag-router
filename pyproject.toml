@@ -47,3 +47,7 @@ dev = [
     "pytest-randomly>=5.0.0",
     "ruff>=0.16.9",
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# Probe-Skripte: bewusst try/except-print-Diagnostik, kein Produk-code:
+"scripts/*" = ["BLE001", "E402", "E731"]
