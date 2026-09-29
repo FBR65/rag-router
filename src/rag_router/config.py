@@ -18,6 +18,10 @@ import yaml
 
 VALID_RETRIEVERS = ("dense", "sparse", "fts", "hybrid")
 VALID_BACKENDS = ("laya", "llm")
+VALID_DECISION_ROUTES = ("auto", "laya", "slm", "hybrid")
+VALID_HYBRID_STRATEGIES = ("auto", "cascade", "committee")
+VALID_AGGREGATES = ("mean", "product", "max", "primary")
+VALID_LOGPROBS_MODES = ("auto", "logprobs", "text")
 RAG_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 RESERVED_RAG_KEYS = frozenset({"none"})
 VAR_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
@@ -42,11 +46,28 @@ class LlmConfig:
 
 
 @dataclass(frozen=True)
+class HybridConfig:
+    strategy: str = "auto"
+    aggregate: str = "mean"
+    cascade_lo: float | None = None
+    cascade_hi: float | None = None
+
+
+@dataclass(frozen=True)
+class CalibrationConfig:
+    enabled: bool = True
+    cache: str = "./.rag-router-calibration.json"
+    questions: str | None = None
+    max_questions: int = 64
+
+
+@dataclass(frozen=True)
 class Thresholds:
-    skip: float = 0.60
-    fanout: float = 0.55
-    answer: float = 0.50
+    skip: float | None = 0.60
+    fanout: float | None = 0.55
+    answer: float | None = 0.50
     rrf_k: int = 60
+
 
 
 @dataclass(frozen=True)
@@ -88,6 +109,11 @@ class RouterConfig:
     thresholds: Thresholds
     defaults: Defaults
     rags: dict[str, RagConfig]
+    decision_route: str = "auto"
+    slm: LlmConfig | None = None
+    hybrid: HybridConfig = HybridConfig()
+    calibration: CalibrationConfig = CalibrationConfig()
+    answer_backend: str = "auto"
 
     def rag_keys(self) -> list[str]:
         """RAG-Keys in YAML-Reihenfolge (Laya-Optionen-Reihenfolge)."""
@@ -171,6 +197,22 @@ def _get_float_01(data: dict[str, Any], key: str, where: str, default: float) ->
     return float(value)
 
 
+def _get_float_01_or_auto(
+    data: dict[str, Any], key: str, where: str
+) -> float | None:
+    """Zahl in [0,1] oder 'auto' (-> None, wird kalibriert)."""
+    if key not in data:
+        return None
+    value = data[key]
+    if isinstance(value, str) and value.strip().lower() == "auto":
+        return None
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        raise _err(f"{where}: '{key}' muss Zahl oder 'auto' sein")
+    if not 0.0 <= float(value) <= 1.0:
+        raise _err(f"{where}: '{key}' muss in [0, 1] liegen, ist {value}")
+    return float(value)
+
+
 def _parse_laya(data: Any) -> LayaConfig:
     where = "router.laya"
     data = _require_map(data, where) if data is not None else {}
@@ -194,11 +236,14 @@ def _parse_laya(data: Any) -> LayaConfig:
     return LayaConfig(model=model, max_len=max_len, preload=preload)
 
 
-def _parse_llm(data: Any) -> LlmConfig:
-    where = "router.llm"
+def _parse_llm(data: Any, where: str = "router.llm") -> LlmConfig:
     if data is None:
-        raise _err(f"{where}: fehlt, aber decision_backend=llm")
+        raise _err(f"{where}: fehlt")
     data = _require_map(data, where)
+    known = {"base_url", "api_key", "model"}
+    unknown = set(data) - known
+    if unknown:
+        raise _err(f"{where}: unbekannte Felder {sorted(unknown)}")
     for field in ("base_url", "api_key", "model"):
         if field not in data:
             raise _err(f"{where}: '{field}' fehlt")
@@ -206,6 +251,59 @@ def _parse_llm(data: Any) -> LlmConfig:
         base_url=_get_str(data, "base_url", where),
         api_key=_get_str(data, "api_key", where),
         model=_get_str(data, "model", where),
+    )
+
+
+def _parse_hybrid(data: Any) -> HybridConfig:
+    where = "router.hybrid"
+    data = _require_map(data, where) if data is not None else {}
+    data = data or {}
+    known = {"strategy", "aggregate", "cascade_lo", "cascade_hi"}
+    unknown = set(data) - known
+    if unknown:
+        raise _err(f"{where}: unbekannte Felder {sorted(unknown)}")
+    strategy = _get_str(data, "strategy", where, "auto")
+    if strategy not in VALID_HYBRID_STRATEGIES:
+        raise _err(
+            f"{where}.strategy: {strategy!r} ungueltig"
+            f" (verfuegbar: {', '.join(VALID_HYBRID_STRATEGIES)})"
+        )
+    aggregate = _get_str(data, "aggregate", where, "mean")
+    if aggregate not in VALID_AGGREGATES:
+        raise _err(
+            f"{where}.aggregate: {aggregate!r} ungueltig"
+            f" (verfuegbar: {', '.join(VALID_AGGREGATES)})"
+        )
+    lo = _get_float_01(data, "cascade_lo", where, 0.40)
+    hi = _get_float_01(data, "cascade_hi", where, 0.60)
+    if lo > hi:
+        raise _err(f"{where}: cascade_lo ({lo}) > cascade_hi ({hi})")
+    return HybridConfig(
+        strategy=strategy, aggregate=aggregate, cascade_lo=lo, cascade_hi=hi
+    )
+
+
+def _parse_calibration(data: Any) -> CalibrationConfig:
+    where = "router.calibration"
+    data = _require_map(data, where) if data is not None else {}
+    data = data or {}
+    known = {"enabled", "cache", "questions", "max_questions"}
+    unknown = set(data) - known
+    if unknown:
+        raise _err(f"{where}: unbekannte Felder {sorted(unknown)}")
+    max_questions = _get_int(data, "max_questions", where, 64)
+    if max_questions < 1:
+        raise _err(f"{where}.max_questions muss >= 1 sein, ist {max_questions}")
+    questions = data.get("questions")
+    if questions is not None and (
+        not isinstance(questions, str) or not questions.strip()
+    ):
+        raise _err(f"{where}.questions muss ein Pfad-String sein")
+    return CalibrationConfig(
+        enabled=_get_bool(data, "enabled", where, True),
+        cache=_get_str(data, "cache", where, CalibrationConfig.cache),
+        questions=questions.strip() if isinstance(questions, str) else None,
+        max_questions=max_questions,
     )
 
 
@@ -220,10 +318,16 @@ def _parse_thresholds(data: Any) -> Thresholds:
     rrf_k = _get_int(data, "rrf_k", where, Thresholds.rrf_k)
     if rrf_k < 1:
         raise _err(f"{where}.rrf_k muss >= 1 sein, ist {rrf_k}")
+
+    def _thr(key: str, default: float) -> float | None:
+        if key not in data:
+            return default
+        return _get_float_01_or_auto(data, key, where)
+
     return Thresholds(
-        skip=_get_float_01(data, "skip", where, Thresholds.skip),
-        fanout=_get_float_01(data, "fanout", where, Thresholds.fanout),
-        answer=_get_float_01(data, "answer", where, Thresholds.answer),
+        skip=_thr("skip", 0.60),
+        fanout=_thr("fanout", 0.55),
+        answer=_thr("answer", 0.50),
         rrf_k=rrf_k,
     )
 
@@ -319,9 +423,14 @@ def parse_config(data: Any) -> RouterConfig:
     router_data = _require_map(root.get("router"), "router")
     known_router = {
         "decision_backend",
+        "decision_route",
+        "answer_backend",
         "language",
         "laya",
         "llm",
+        "slm",
+        "hybrid",
+        "calibration",
         "thresholds",
         "defaults",
     }
@@ -329,13 +438,41 @@ def parse_config(data: Any) -> RouterConfig:
     if unknown_router:
         raise _err(
             f"router: unbekannte Felder {sorted(unknown_router)}"
-            " (erwartet: decision_backend, defaults, language, laya, llm, thresholds)"
+            " (erwartet: answer_backend, calibration, decision_backend,"
+            " decision_route, defaults, hybrid, language, laya, llm, slm,"
+            " thresholds)"
         )
-    backend = _get_str(router_data, "decision_backend", "router")
-    if backend not in VALID_BACKENDS:
+    has_route = "decision_route" in router_data
+    has_backend = "decision_backend" in router_data
+    if has_route and has_backend:
         raise _err(
-            f"router.decision_backend: {backend!r} ungueltig"
-            f" (verfuegbar: {', '.join(VALID_BACKENDS)})"
+            "router.decision_route und router.decision_backend sind beide"
+            " gesetzt — nur eines verwenden (decision_route ersetzt"
+            " decision_backend)"
+        )
+    if not has_route and not has_backend:
+        raise _err("router: 'decision_backend' oder 'decision_route' fehlt")
+    if has_route:
+        decision_route = _get_str(router_data, "decision_route", "router")
+        if decision_route not in VALID_DECISION_ROUTES:
+            raise _err(
+                f"router.decision_route: {decision_route!r} ungueltig"
+                f" (verfuegbar: {', '.join(VALID_DECISION_ROUTES)})"
+            )
+        backend = "laya" if decision_route in ("laya", "auto") else "llm"
+    else:
+        backend = _get_str(router_data, "decision_backend", "router")
+        if backend not in VALID_BACKENDS:
+            raise _err(
+                f"router.decision_backend: {backend!r} ungueltig"
+                f" (verfuegbar: {', '.join(VALID_BACKENDS)})"
+            )
+        decision_route = "laya" if backend == "laya" else "slm"
+    answer_backend = _get_str(router_data, "answer_backend", "router", "auto")
+    if answer_backend not in ("auto", "laya", "slm"):
+        raise _err(
+            f"router.answer_backend: {answer_backend!r} ungueltig"
+            " (verfuegbar: auto, laya, slm)"
         )
     language = _get_str(router_data, "language", "router", "multilingual")
     if language not in ("multilingual", "english"):
@@ -344,12 +481,27 @@ def parse_config(data: Any) -> RouterConfig:
             " (verfuegbar: multilingual, english)"
         )
     laya = _parse_laya(router_data.get("laya"))
-    llm = _parse_llm(router_data.get("llm")) if backend == "llm" else None
-    if backend == "laya" and router_data.get("llm") is not None:
+    llm_raw = router_data.get("llm")
+    slm_raw = router_data.get("slm")
+    if slm_raw is not None and llm_raw is not None:
+        raise _err("router.slm und router.llm sind beide gesetzt — nur eines")
+    # slm ist der neue Name; llm bleibt Alias (gleiche Mechanik).
+    slm = _parse_llm(slm_raw, "router.slm") if slm_raw is not None else None
+    llm = _parse_llm(llm_raw, "router.llm") if llm_raw is not None else None
+    if slm is None and llm is not None:
+        slm = llm
+    if has_backend and backend == "laya" and (llm_raw is not None or slm_raw is not None):
         raise _err(
-            "router.llm ist gesetzt, aber decision_backend=laya"
-            " — llm-Sektion entfernen oder backend auf llm setzen"
+            "router.slm/llm ist gesetzt, aber decision_backend=laya"
+            " — Section entfernen oder backend auf llm setzen"
         )
+    if decision_route in ("auto", "slm", "hybrid") and slm is None:
+        raise _err(
+            f"router.{'slm' if has_route else 'llm'}: fehlt, aber"
+            f" decision_route={decision_route} braucht ein SLM"
+        )
+    hybrid = _parse_hybrid(router_data.get("hybrid"))
+    calibration = _parse_calibration(router_data.get("calibration"))
     thresholds = _parse_thresholds(router_data.get("thresholds"))
     defaults = _parse_defaults(router_data.get("defaults"))
     rags_data = root.get("rags")
@@ -373,6 +525,11 @@ def parse_config(data: Any) -> RouterConfig:
         thresholds=thresholds,
         defaults=defaults,
         rags=rags,
+        decision_route=decision_route,
+        slm=slm,
+        hybrid=hybrid,
+        calibration=calibration,
+        answer_backend=answer_backend,
     )
 
 

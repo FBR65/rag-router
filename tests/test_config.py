@@ -202,3 +202,116 @@ rags:
     assert cfg.rags["a"].top_k == 7
     assert cfg.rags["a"].rerank is False
     assert cfg.rags["b"].rerank is True  # Default
+
+
+SLM_BLOCK = """
+  slm:
+    base_url: ${RR_TEST_BASE}
+    api_key: ${RR_TEST_KEY}
+    model: test-model
+"""
+
+
+def _with_slm(yml: str) -> str:
+    return yml.replace(
+        "  laya:\n    model: multilingual\n    max_len: 1024\n",
+        "  laya:\n    model: multilingual\n    max_len: 1024\n" + SLM_BLOCK,
+    )
+
+
+def test_decision_route_slm(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("RR_TEST_BASE", "http://127.0.0.1:8080/v1")
+    monkeypatch.setenv("RR_TEST_KEY", "k")
+    yml = _with_slm(BASE_YAML).replace(
+        "  decision_backend: laya", "  decision_route: slm"
+    )
+    cfg = load_config(write(tmp_path, yml))
+    assert cfg.decision_route == "slm"
+    assert cfg.slm.model == "test-model"
+    assert cfg.slm.base_url == "http://127.0.0.1:8080/v1"
+
+
+def test_decision_route_hybrid_needs_slm(tmp_path) -> None:
+    yml = BASE_YAML.replace("  decision_backend: laya", "  decision_route: hybrid")
+    with pytest.raises(ConfigError, match="slm"):
+        load_config(write(tmp_path, yml))
+
+
+def test_decision_route_invalid_rejected(tmp_path) -> None:
+    yml = BASE_YAML.replace("  decision_backend: laya", "  decision_route: magisch")
+    with pytest.raises(ConfigError, match="decision_route"):
+        load_config(write(tmp_path, yml))
+
+
+def test_route_and_backend_conflict_rejected(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("RR_TEST_BASE", "http://x/v1")
+    monkeypatch.setenv("RR_TEST_KEY", "k")
+    yml = _with_slm(BASE_YAML).replace(
+        "  decision_backend: laya", "  decision_backend: laya\n  decision_route: slm"
+    )
+    with pytest.raises(ConfigError, match="decision_route"):
+        load_config(write(tmp_path, yml))
+
+
+def test_thresholds_auto_is_none(tmp_path) -> None:
+    yml = BASE_YAML + "  thresholds:\n    skip: auto\n    fanout: auto\n    answer: auto\n"
+    # thresholds gehoert unter router -> korrekt einsetzen
+    yml = BASE_YAML.replace(
+        "  laya:\n    model: multilingual\n    max_len: 1024\n",
+        "  thresholds:\n    skip: auto\n    fanout: 0.55\n    answer: auto\n",
+    )
+    cfg = load_config(write(tmp_path, yml))
+    assert cfg.thresholds.skip is None
+    assert cfg.thresholds.fanout == 0.55
+    assert cfg.thresholds.answer is None
+
+
+def test_thresholds_numbers_still_work(tmp_path) -> None:
+    cfg = load_config(write(tmp_path, BASE_YAML))
+    assert cfg.thresholds.skip == 0.60
+
+
+def test_slm_key_alias_accepted(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("RR_TEST_BASE", "http://x/v1")
+    monkeypatch.setenv("RR_TEST_KEY", "k")
+    yml = _with_slm(BASE_YAML).replace(
+        "  decision_backend: laya", "  decision_backend: llm"
+    )
+    cfg = load_config(write(tmp_path, yml))
+    assert cfg.backend == "llm"
+    assert cfg.slm.model == "test-model"
+
+
+def test_hybrid_aggregate_invalid_rejected(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("RR_TEST_BASE", "http://x/v1")
+    monkeypatch.setenv("RR_TEST_KEY", "k")
+    yml = _with_slm(BASE_YAML).replace(
+        "  decision_backend: laya", "  decision_route: hybrid"
+    )
+    yml = yml.replace(
+        "  laya:\n",
+        "  hybrid:\n    strategy: committee\n    aggregate: magisch\n  laya:\n",
+    )
+    with pytest.raises(ConfigError, match="aggregate"):
+        load_config(write(tmp_path, yml))
+
+
+def test_calibration_section_loads(tmp_path) -> None:
+    yml = BASE_YAML.replace(
+        "  laya:\n",
+        "  calibration:\n    enabled: false\n    cache: /tmp/prof.json\n  laya:\n",
+    )
+    cfg = load_config(write(tmp_path, yml))
+    assert cfg.calibration.enabled is False
+    assert cfg.calibration.cache == "/tmp/prof.json"
+
+
+def test_unknown_slm_field_rejected(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("RR_TEST_BASE", "http://x/v1")
+    monkeypatch.setenv("RR_TEST_KEY", "k")
+    yml = _with_slm(BASE_YAML).replace(
+        "    model: test-model\n",
+        "    model: test-model\n    magie: 1\n",
+    )
+    with pytest.raises(ConfigError, match="magie"):
+        load_config(write(tmp_path, yml))
