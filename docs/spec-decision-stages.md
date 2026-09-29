@@ -7,6 +7,9 @@ hybrid, je eigener Weg, einfach integrierbar". **Revision 2 ersetzt §2–§5.**
 **Revision 3 (2026-09-29):** Nutzer-Antworten §8 (Endpoint wählt der Nutzer;
 Logprobs automatisch; alle drei Wege; Rest „weiß nicht" → Automatik; Env
 generisch). **Revision 3 ersetzt §4, §5 und §8 und ergänzt §2.3 (Automatik).**
+**Revision 4 (2026-09-29):** Nutzerauftrag „Behebe 2 und 4" (Typenchecker +
+Nebenläufigkeits-Schutz der Kalibrierung). **Revision 4 ergänzt §2.3, §5 und §7.**
+Freigabe der Umgebungsänderung: `mypy` als Dev-Abhängigkeit.
 **Datum:** 2026-09-29
 **Bezug:** Integrationstest `tests/test_integration.py::TestLayaPipeline` (4 rot),
 Diagnose in dieser Sitzung.
@@ -153,6 +156,13 @@ Default **`auto`**; das System bestimmt die Zahl selbst.
 - **Reproduzierbarkeit:** das Profil ist versioniert
   (`generator_version`, `created_at`, `sources`); bei geändertem Fragenkatalog
   oder Endpoint wird ein neues Profil erzeugt, das alte bleibt als Datei.
+- **Nebenläufigkeit (Rev. 4):** Kalibrierung und Cache-Schreiben sind durch ein
+  dateibasiertes Lock geschützt (`<cache>.lock`, `O_CREAT|O_EXCL`, PID-Inhalt).
+  Startet ein zweiter Prozess bei kaltem Cache, wartet er, liest den dann
+  vorhandenen Cache und kalibriert **nicht** erneut. Ist das Lock verwaist
+  (PID nicht mehr aktiv) oder älter als `stale_after`, wird es übernommen.
+  Kann das Lock nicht erworben werden, läuft der Prozess mit dem dokumentierten
+  Fallback statt zu blockieren — der Router blockiert nie.
 
 ---
 
@@ -284,6 +294,16 @@ Ein reiner Laya-Weg (`decision_route: laya`) erfüllt S7 **nicht**; README/Modul
 nennt die Inversion von `p(none)` auf dem deutschen Set und verweist auf
 `slm`/`hybrid`/`auto`.
 
+**S10 – Kalibrierungs-Nebenläufigkeit (Rev. 4)**
+Gegeben zwei konkurrierende Prozesse bei kaltem Cache: genau **eine**
+Kalibrierung läuft (Mess-Call-Zählung im Test = 1× Fragenzahl), der zweite
+liest das Ergebnis. Verwaistes Lock (tote PID) wird übernommen; ein nicht
+erwerbbares Lock führt zum dokumentierten Fallback, nie zum Blockieren.
+
+**S11 – Statische Typen (Rev. 4)**
+`uv run mypy src/rag_router` läuft fehlerfrei (die in §7 festgelegte Baseline
+ist null). Neue Fehler blockieren den Abschluss.
+
 ---
 
 ## 6. Negative Invarianten (müssen überleben)
@@ -306,6 +326,11 @@ nennt die Inversion von `p(none)` auf dem deutschen Set und verweist auf
   Tests in bestehenden Dateien + `tests/test_decision_routes.py`.
 - **Git:** Checkpoint-Commit bei Spec-Freigabe, je RED/GREEN/REFACTOR-Zyklus,
   finaler Gauntlet-Commit (nur mit Freigabe).
+- **Rev. 4 – neue Dev-Abhängigkeit:** `mypy` (nur `[dependency-groups].dev`,
+  nicht zur Laufzeit). Begründung: schließt die Lücke aus §2/EVIDENCE Punkt 2 –
+  ganze Fehlerklassen wie `float >= None` werden vor dem Testen gefangen.
+  Zusätzlich `mypy.ini`/`[tool.mypy]` mit `ignore_missing_imports` für die
+  ungetypten Drittpakete (`laya`, `FlagEmbedding`, `lancedb`).
 - **Gauntlet:** voller Loop; Integrationstest `-m integration` benötigt den
   lokalen Endpunkt (`http://127.0.0.1:8080/v1`, Modell per Env, z. B.
   `RR_ROUTER_SLM`); ohne Env/Endpoint skippt der Test mit Begründung.

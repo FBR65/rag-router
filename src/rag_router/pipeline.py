@@ -34,6 +34,7 @@ from rag_router.calibration import (
 from rag_router.checking.base import AnswerChecker, CheckResult
 from rag_router.config import RouterConfig
 from rag_router.decision.base import DecisionBackend
+from rag_router.locking import ensure_cached_calibration
 from rag_router.router import DecisionThresholds, RouterDecisionEngine
 
 CALIBRATION_DATA = Path(__file__).parent / "data" / "calibration_de.json"
@@ -339,29 +340,13 @@ def _build_decision_and_checker(
     rag_descriptions = {key: rag.description for key, rag in config.rags.items()}
     cache = Path(config.calibration.cache)
 
-    def _load_cache() -> CalibrationProfile | None:
-        if not cache.is_file():
-            return None
-        try:
-            return CalibrationProfile.from_dict(
-                json.loads(cache.read_text(encoding="utf-8"))
-            )
-        except (OSError, ValueError, KeyError):
-            return None
-
     profile: CalibrationProfile | None = None
     if config.decision_route == "auto" and config.calibration.enabled:
-        profile = _load_cache()
-        if profile is None:
-            profile = _run_calibration(config, rag_descriptions)
-            if profile is not None:
-                try:
-                    cache.write_text(
-                        json.dumps(profile.to_dict(), ensure_ascii=False, indent=2),
-                        encoding="utf-8",
-                    )
-                except OSError:
-                    pass
+        # Genau eine Messung bei kaltem Cache; wartende Prozesse lesen danach
+        # das Ergebnis (Datei-Lock, S10). Nie blockierend im Fehlerfall.
+        profile = ensure_cached_calibration(
+            cache, lambda: _run_calibration(config, rag_descriptions)
+        )
 
     try:
         route = _select_route(config, profile)
