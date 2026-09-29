@@ -2,7 +2,7 @@
 
 import pytest
 
-from rag_router.decision.base import RouteDist
+from rag_router.decision.base import KbDist, RouteDist, SkipDist
 from rag_router.router import DecisionThresholds, RouterDecisionEngine
 
 DIST_3_1 = {"policy": 0.38, "news": 0.19, "none": 0.43}
@@ -14,6 +14,17 @@ def make_backend(probs: dict[str, float]) -> object:
             return RouteDist(probabilities=dict(probs))
 
     return FakeBackend()
+
+
+def make_split(p_recall: float, kb: dict[str, float]) -> object:
+    class FakeSplit:
+        def skip(self, question, rag_descriptions=None):
+            return SkipDist(p_recall=p_recall)
+
+        def choose(self, question, rag_descriptions):
+            return KbDist(probabilities=dict(kb))
+
+    return FakeSplit()
 
 
 class TestSkip:
@@ -42,6 +53,52 @@ class TestSkip:
             thresholds=DecisionThresholds(),
         )
         assert engine.route("x").routes == ["none"]
+
+
+class TestSplitRouteSkipBoundary:
+    def test_split_skip_boundary_inclusive(self) -> None:
+        engine = RouterDecisionEngine(
+            make_split(p_recall=0.40, kb={"policy": 1.0}),
+            thresholds=DecisionThresholds(),
+        )
+        # p_none = 0.60 == skip -> skip (inklusiv)
+        assert engine.route("x").routes == ["none"]
+
+    def test_split_just_below_skips_not(self) -> None:
+        engine = RouterDecisionEngine(
+            make_split(p_recall=0.41, kb={"policy": 1.0}),
+            thresholds=DecisionThresholds(),
+        )
+        assert engine.route("x").routes == ["policy"]
+
+
+class TestFanoutBoundary:
+    def test_fanout_boundary_exact_is_clear_leader(self) -> None:
+        # renormalisiert exakt 0.55 -> NICHT kleiner -> clear_leader
+        engine = RouterDecisionEngine(
+            make_backend({"policy": 0.55, "news": 0.45, "none": 0.0}),
+            thresholds=DecisionThresholds(),
+        )
+        decision = engine.route("F")
+        assert decision.reason == "clear_leader"
+        assert decision.routes == ["policy"]
+
+    def test_split_fanout_boundary_exact_is_clear_leader(self) -> None:
+        # Split-Pfad: KB 0.55/0.45 -> renormalisiert 0.55 -> clear_leader
+        engine = RouterDecisionEngine(
+            make_split(p_recall=0.9, kb={"policy": 0.55, "news": 0.45}),
+            thresholds=DecisionThresholds(),
+        )
+        decision = engine.route("F")
+        assert decision.reason == "clear_leader"
+        assert decision.routes == ["policy"]
+
+    def test_split_fanout_below_boundary(self) -> None:
+        engine = RouterDecisionEngine(
+            make_split(p_recall=0.9, kb={"policy": 0.54, "news": 0.46}),
+            thresholds=DecisionThresholds(),
+        )
+        assert engine.route("F").routes == ["policy", "news"]
 
 
 class TestFanout:

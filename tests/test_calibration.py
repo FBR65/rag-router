@@ -163,3 +163,56 @@ class TestProfile:
     def test_best_answer_backend(self) -> None:
         assert choose_best_answer_backend({"laya": 0.4, "slm": 0.9}).name == "slm"
         assert choose_best_answer_backend({}).name == "laya"
+
+
+class TestPropertiesSweep:
+    """Property-Stil (stdlib-Sweep; kein hypothesis installiert).
+
+    Invarianten: Schwellen stets in [0,1], Cascade-Band geordnet, Accuracy in
+    [0,1] — fuer viele zufaellige Eingaben.
+    """
+
+    def test_thresholds_always_bounded(self) -> None:
+        import random
+
+        rng = random.Random(1234)
+        for _ in range(200):
+            n = rng.randint(0, 20)
+            samples = []
+            for i in range(n):
+                gold = rng.choice(["policy", "news", "none"])
+                kb = {
+                    "policy": rng.random(),
+                    "news": rng.random(),
+                }
+                samples.append(
+                    sample(
+                        f"q{i}",
+                        gold,
+                        rng.random(),
+                        kb,
+                        answerable=rng.choice([True, False]),
+                        p_answered=rng.random(),
+                    )
+                )
+            thr = derive(samples)
+            for value in (thr.skip, thr.fanout, thr.answer):
+                assert 0.0 <= value <= 1.0
+            assert 0.0 <= thr.cascade_lo <= thr.cascade_hi <= 1.0
+            acc = route_accuracy(samples, thr)
+            assert 0.0 <= acc <= 1.0
+
+    def test_skip_threshold_never_skips_all_answerable(self) -> None:
+        """Invariante: wenn separierbar, liegt die Schwelle <= min_no."""
+        import random
+
+        rng = random.Random(99)
+        for _ in range(200):
+            max_ans = rng.random() * 0.5
+            min_no = 0.5 + rng.random() * 0.5
+            samples = [
+                sample("a", "policy", max_ans, {"policy": 1.0}),
+                sample("n", "none", min_no, {"policy": 1.0}, False),
+            ]
+            thr = derive(samples)
+            assert max_ans < thr.skip <= min_no

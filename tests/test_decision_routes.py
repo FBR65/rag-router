@@ -215,6 +215,19 @@ class TestHybridCascade:
         assert skip.p_recall == pytest.approx(0.95)
         assert secondary.skip_calls == 0, "ausserhalb der Grauzone kein secondary"
 
+    def test_gray_zone_bounds_inclusive(self) -> None:
+        # exactly at lo and hi -> secondary greift (inklusive Grenzen)
+        for value in (0.4, 0.6):
+            primary = StubRoute("p", skip_p=value, kb={"policy": value, "news": 1 - value})
+            secondary = StubRoute("s", skip_p=0.9, kb={"policy": 0.9, "news": 0.1})
+            route = HybridRoute(
+                primary, secondary, strategy="cascade", cascade_lo=0.4, cascade_hi=0.6
+            )
+            assert route.skip("F").p_recall == pytest.approx(0.9), (
+                f"Grenze {value} muss in der Grauzone liegen (inklusiv)"
+            )
+            assert secondary.skip_calls == 1
+
     def test_secondary_takes_over_in_gray_zone(self) -> None:
         primary = StubRoute("p", skip_p=0.5, kb={"policy": 0.5, "news": 0.5})
         secondary = StubRoute("s", skip_p=0.9, kb={"policy": 0.9, "news": 0.1})

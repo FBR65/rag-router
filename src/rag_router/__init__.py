@@ -3,6 +3,8 @@
 __version__ = "0.1.0"
 
 
-def main() -> None:
-    """Dummy-Entry (CLI kommt in P7)."""
-    print("rag-router", __version__)
+def main(argv: list[str] | None = None) -> int:
+    """CLI-Entry (siehe rag_router.cli)."""
+    from rag_router.cli import main as cli_main
+
+    return cli_main(argv)

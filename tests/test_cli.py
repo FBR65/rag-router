@@ -5,6 +5,29 @@ import pytest
 from rag_router.cli import build_parser, main
 
 
+class TestEntryPoint:
+    def test_package_main_delegates_to_cli(self, monkeypatch) -> None:
+        """Regression: der Konsolen-Entry darf nicht der alte Dummy sein."""
+        import rag_router
+        from rag_router import cli
+
+        called = {}
+
+        def fake_main(argv=None):
+            called["argv"] = argv
+            return 0
+
+        monkeypatch.setattr(cli, "main", fake_main)
+        assert rag_router.main(["route", "--config", "x", "F"]) == 0
+        assert called.get("argv") == ["route", "--config", "x", "F"]
+
+    def test_package_main_parses_route(self) -> None:
+        import rag_router
+
+        # Unbekannter Pfad -> Exit 2 (Parser + Fehlerpfad, kein Dummy-Print)
+        assert rag_router.main(["route", "--config", "/nicht/da.yaml", "F"]) == 2
+
+
 class TestParser:
     def test_route_command(self) -> None:
         parser = build_parser()
