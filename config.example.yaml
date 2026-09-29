@@ -1,25 +1,48 @@
 # rag-router Konfiguration (Beispiel)
 # Verzeichnis: db-Pfade relativ zu DIESER Datei.
-# Laya: Gruppennamen aus dem laya-Paket (english|multilingual|typed-decisions).
-# Reranker ist AKTIV (Vorgabe Frank): per-rag `rerank: false` zum Abschalten.
+#
+# Drei Entscheidungswege (decision_route): laya | slm | hybrid | auto.
+#   laya   - Laya-Checkpoint (lokal, kein Endpunkt; Default)
+#   slm    - OpenAI-kompatibles SLM (logprobs)
+#   hybrid - beide (cascade/committee)
+#   auto   - Messung waehlt den besten Weg und kalibriert die Schwellen
+#
+# Das Beispiel startet mit 'laya' (laeuft offline ohne Endpunkt). Fuer slm/
+# hybrid/auto die markierten Bloecke einkommentieren und die generischen
+# ${RR_ROUTER_SLM_*}-Variablen setzen. Schwellen: Zahl ODER 'auto'.
 
 router:
-  decision_backend: laya        # laya | llm
-  language: multilingual        # informell dokumentiert (Laya-Modell wählt Sprache)
+  decision_route: laya          # laya | slm | hybrid | auto
+  answer_backend: auto          # auto | laya | slm
+  language: multilingual
   laya:
     model: multilingual         # convaiinnovations/laya + Revision multilingual
     max_len: 1024
     preload: false
+  # --- slm/hybrid/auto: diese beiden Bloecke einkommentieren -------------
+  # slm:
+  #   base_url: "${RR_ROUTER_SLM_BASE_URL}"
+  #   api_key: "${RR_ROUTER_SLM_API_KEY}"
+  #   model: "${RR_ROUTER_SLM_MODEL}"
+  # hybrid:
+  #   strategy: auto              # auto | cascade | committee
+  #   aggregate: mean             # committee: mean | product | max | primary
+  # calibration:
+  #   enabled: true
+  #   cache: ./.rag-router-calibration.json
+  #   questions: null             # null = mitgelieferter Kalibrierungssatz
+  #   max_questions: 64
+  # ----------------------------------------------------------------------
   thresholds:
-    skip: 0.60                  # p(none) >= skip -> nicht suchen
-    fanout: 0.55                # KB-Fuehrung < fanout -> Top-2 suchen
-    answer: 0.50                # p(answered) >= answer -> "beantwortet"
+    skip: 0.60                  # auto | Zahl
+    fanout: 0.55
+    answer: 0.50
     rrf_k: 60                   # RRF-Konstante (AurumVector-Default)
   defaults:
     top_k: 5
     rerank: true                # bge-reranker-v2-m3 AKTIV
     embed:
-      model: BAAI/bge-m3        # ein Modell fuer dense (+ sparse, AurumVector-Option)
+      model: BAAI/bge-m3
       device: cpu
       batch_size: 16
 rags:
@@ -29,7 +52,7 @@ rags:
       type: lancedb
       db: ./data/lancedb
       table: gemeinde_chunks
-    retriever: hybrid            # dense | sparse | fts | hybrid (+RRF)
+    retriever: hybrid
     top_k: 3
     rerank: true
   firma:
@@ -40,7 +63,7 @@ rags:
       table: firma_chunks
     retriever: hybrid
     top_k: 5
-    rerank: false                # Beispiel einer per-rag-Abschaltung
+    rerank: false               # Beispiel einer per-rag-Abschaltung
   dienste:
     description: "IT-Dienste und Tarife des Providers Quellnetz"
     backend:

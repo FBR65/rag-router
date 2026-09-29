@@ -141,7 +141,13 @@ def derive(samples: Sequence[CalibrationSample]) -> DerivedThresholds:
 def route_accuracy(
     samples: Sequence[CalibrationSample], thresholds: DerivedThresholds
 ) -> float:
-    """Trefferquote einer Route: Skip und KB-Wahl gegen Gold."""
+    """Trefferquote einer Route: Skip und (falls Gold bekannt) KB-Wahl.
+
+    ``gold_route == "none"``  -> korrekt, wenn geskippt.
+    ``gold_route == ""``      -> Recherche erwartet, KB unbekannt: korrekt, wenn
+    nicht geskippt (generischer Kalibrierungssatz ohne KB-Gold).
+    sonst                     -> KB-Wahl gegen Gold.
+    """
     if not samples:
         return 0.0
     hits = 0
@@ -152,6 +158,9 @@ def route_accuracy(
             continue
         if s.skip_p_none >= thresholds.skip:
             continue  # faelschlich geskippt
+        if s.gold_route == "":
+            hits += 1  # nur die Skip-Entscheidung bewertbar
+            continue
         leader = max(s.kb, key=s.kb.get, default=None)
         if leader is None:
             continue

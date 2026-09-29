@@ -28,7 +28,6 @@ from rag_router.calibration import (
     FALLBACK_SKIP,
     CalibrationProfile,
     CalibrationSample,
-    choose_best_answer_backend,
     choose_best_route,
     derive,
 )
@@ -310,13 +309,17 @@ def _load_calibration_questions(config: RouterConfig) -> list[dict[str, Any]]:
 def _measure_route(route, questions, rag_descriptions) -> list[CalibrationSample]:
     samples: list[CalibrationSample] = []
     for q in questions:
+        needs = bool(q.get("needs_retrieval", False))
+        gold = q.get("gold_route", "" if needs else "none")
+        if needs and gold == "none":
+            gold = ""  # Recherche erwartet, KB unbekannt
         skip = route.skip(q["question"], rag_descriptions)
         kb = route.choose(q["question"], rag_descriptions)
         samples.append(
             CalibrationSample(
                 question_id=q["id"],
-                gold_route=q.get("gold_route", "none"),
-                answerable=bool(q.get("answerable", q.get("needs_retrieval", False))),
+                gold_route=gold,
+                answerable=bool(q.get("answerable", needs)),
                 skip_p_none=float(skip.p_none),
                 kb=dict(kb.probabilities),
             )
@@ -424,8 +427,8 @@ def _run_calibration(
         return None
     best = choose_best_route(samples, thresholds)
     thr = thresholds[best.name]
-    answer_scores = _answer_backend_scores(config, questions)
-    answer_backend = choose_best_answer_backend(answer_scores).name
+    # answer_backend folgt dem besten Weg (einfach + deterministisch).
+    answer_backend = "slm" if best.name == "slm" else "laya"
     from datetime import datetime
 
     return CalibrationProfile(
@@ -440,44 +443,10 @@ def _run_calibration(
         sources={
             "best_route": best.name,
             "route_accuracy": best.accuracy,
-            "answer_scores": answer_scores,
+            "candidates": sorted(routes),
             "derived": dict(thr.sources),
         },
     )
-
-
-def _answer_backend_scores(
-    config: RouterConfig, questions: list[dict[str, Any]]
-) -> dict[str, float]:
-    """Einfache Messung: Anteil korrekt erkannter 'needs_retrieval'."""
-    candidates: dict[str, AnswerChecker] = {}
-    laya = _try_checker_build("laya", config)
-    if laya is not None:
-        candidates["laya"] = laya
-    if config.slm is not None or config.llm is not None:
-        slm = _try_checker_build("slm", config)
-        if slm is not None:
-            candidates["slm"] = slm
-    scores: dict[str, float] = {}
-    for name, checker in candidates.items():
-        correct = 0
-        for q in questions:
-            passages = [q["question"]]
-            result = checker.check(q["question"], passages)
-            predicted = result.p_answered >= 0.5
-            expected = bool(q.get("needs_retrieval", False))
-            if predicted == expected:
-                correct += 1
-        scores[name] = correct / max(1, len(questions))
-    return scores
-
-
-def _try_checker_build(backend: str, config: RouterConfig) -> AnswerChecker | None:
-    """Baut einen Checker; gibt None zurueck, wenn er nicht verfuegbar ist."""
-    try:
-        return _make_checker_for(config, backend)
-    except (ImportError, RuntimeError, ValueError, TypeError, OSError):
-        return None
 
 
 def _make_reranker() -> Any:
