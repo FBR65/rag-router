@@ -49,6 +49,26 @@ class TestFileLock:
         with file_lock(lock, stale_after=10.0, timeout=1.0) as acquired:
             assert acquired is True
 
+    def test_old_lock_with_live_pid_taken_over(self, tmp_path) -> None:
+        """Haengender Prozess: lebende PID, aber Lock aelter als stale_after."""
+        import os
+
+        lock = tmp_path / "c.json.lock"
+        lock.write_text(str(os.getpid()), encoding="utf-8")  # lebende PID
+        old = time.time() - 3600
+        os.utime(lock, (old, old))
+        with file_lock(lock, stale_after=10.0, timeout=1.0) as acquired:
+            assert acquired is True, "altes Lock muss per stale_after uebernommen werden"
+
+    def test_live_pid_fresh_lock_not_taken_over(self, tmp_path) -> None:
+        """Lebende PID + frisches Lock: nicht uebernehmen (kein Doppel-Lauf)."""
+        import os
+
+        lock = tmp_path / "c.json.lock"
+        lock.write_text(str(os.getpid()), encoding="utf-8")
+        with file_lock(lock, stale_after=3600.0, timeout=0.2, poll=0.05) as acquired:
+            assert acquired is False
+
     def test_timeout_returns_false_small(self, tmp_path) -> None:
         lock = tmp_path / "c.json.lock"
         lock.write_text(str(__import__("os").getpid()), encoding="utf-8")

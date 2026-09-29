@@ -1,16 +1,17 @@
 # EVIDENCE: Entscheidungswege (laya | slm | hybrid | auto)
 
-**Stand:** 2026-09-29 · **Source-State:** Commit `ee187b0` (Arbeitsbaum danach
-unverändert) · **Spec:** `docs/spec-decision-stages.md` (Rev. 3, freigegeben;
-Spec-Freigabe erteilt: Nutzerantworten §8 = 1 getrennt, 2 Default, 3 ok, plus
-„Go bis zum Ende").
+**Stand:** 2026-09-29 · **Source-State:** Commit `2a9f174` (Arbeitsbaum danach
+unverändert) · **Spec:** `docs/spec-decision-stages.md` (Rev. **4**, freigegeben;
+Rev. 4 = Nutzerauftrag „Behebe 2 und 4": Typenchecker + Kalibrierungs-Lock).
+Spec-Freigabe der Umgebungsänderung (mypy) erteilt.
 
 ## Umfang (Tier)
 
 **Tier 3 (hoch)** nach Kalibrierung: neue öffentliche Schnittstellen, Routing-
-Entscheidung (Kern des Produkts), Automatik mit Persistenz. Failure-Model:
-falsches Skip einer echten Frage, stiller Fallback, unerreichbarer Endpoint,
-`auto`-Werte außerhalb [0,1], Kalibrierungs-Overfit.
+Entscheidung (Kern des Produkts), Automatik mit Persistenz + Nebenläufigkeit.
+Failure-Model: falsches Skip einer echten Frage, stiller Fallback, unerreichbarer
+Endpoint, `auto`-Werte außerhalb [0,1], Kalibrierungs-Overfit, **parallele
+Kalibrierung zweier Prozesse**, Typfehler zur Laufzeit.
 
 ## Spec → Test-Mapping
 
@@ -23,26 +24,28 @@ falsches Skip einer echten Frage, stiller Fallback, unerreichbarer Endpoint,
 | S5 Rückwärtskompatibel | `test_router.py` (21), `test_pipeline.py::Test*` Legacy-Pfad |
 | S6 Validierung | `test_config.py::test_decision_route_*`, `test_*_rejected` |
 | S7 Integration (auto) | `test_integration.py::TestAutoPipeline` (6) |
-| S8 Automatik | `test_calibration.py` (18), `test_pipeline.py::TestAutoCalibration` |
+| S8 Automatik | `test_calibration.py` (20), `test_pipeline.py::TestAutoCalibration` |
 | S9 Laya-Grenze | `TestLayaPipeline::test_documented_laya_skip_inversion` |
+| S10 Kalibrierungs-Lock | `test_locking.py` (11) |
+| S11 Statische Typen | `uv run mypy` (Baseline aus Rev. 4) |
 
 Alle Szenarien der Spec sind auf grüne Tests abgebildet; keine Lücke.
 
-## Gauntlet-Layer (frischer Lauf nach letzter Code-Änderung, Commit ee187b0)
+## Gauntlet-Layer (frischer Lauf nach letzter Code-Änderung, Commit 2a9f174)
 
 | Layer | Kommando | Ergebnis |
 |---|---|---|
-| Volle Suite (Unit) | `uv run pytest -q` | **139 passed**, 10 deselected |
-| Statische Typen | — | **übersprungen:** kein mypy/pyright im Projekt/Setup (Spec §7 nennt keins) |
+| Volle Suite (Unit) | `uv run pytest -q` | **150 passed**, 10 deselected |
+| Statische Typen | `uv run mypy` | **Success: no issues found in 20 source files** (Baseline 5 → 0) |
 | Lint/Format | `uv run ruff check src/ tests/` | **All checks passed!** |
-| Coverage (Unit+Integration) | `uv run pytest -m "" --cov=rag_router` | gesamt **90 %**; neue Module: `calibration` 99 %, `decision/route` 90 %, `router` 88 %, `pipeline` 81 %, `config` 87 % |
-| Integration (echtes Modell) | `RR_ROUTER_SLM_* uv run pytest -m integration` | **10 passed** (Laya offline + SLM/auto am Endpoint) |
-| Mutation (manuell, 7 Mutanten) | `bash scripts/mutation_check.sh` | **7/7 getötet** |
-| Property-Tests | `test_calibration.py::TestPropertiesSweep` | 2 Properties, 400 Zufalls-Eingaben; `hypothesis` nicht installiert (keine neue Abhängigkeit), stdlib-Sweep als Ersatz |
-| Complexity | Sichtprüfung | neue Funktionen klein/ein Zweck; `SlmRoute`/`HybridRoute` je < 120 Zeilen |
-| Real Execution | siehe unten | CLI `index`+`route`+`ask` echt am Endpoint |
-| Supply chain | `pyproject.toml` | **keine neue Abhängigkeit** (openai, laya vorhanden); kein Secret im Diff |
-| Suite-Health | 3× randomisiert (`pytest-randomly`) | 3× **139 passed**, keine Flakes |
+| Coverage (Unit) | `uv run pytest --cov=rag_router` | gesamt 83 %; neue Module u. a. `calibration` 97 %, `locking` hoch, `decision/route` 86 % |
+| Integration (echtes Modell) | `RR_ROUTER_SLM_* uv run pytest -m integration` | **10 passed** |
+| Mutation (manuell, 9 Mutanten) | `bash scripts/mutation_check.sh` | **9/9 getötet** |
+| Property-Tests | `test_calibration.py::TestPropertiesSweep` | 2 Properties, 400 Zufalls-Eingaben; `hypothesis` nicht installiert, stdlib-Sweep als Ersatz |
+| Complexity | Sichtprüfung | neue Funktionen klein/ein Zweck; `locking.py` < 140 Zeilen |
+| Real Execution | CLI `index`+`route`+`ask` am Endpoint | `auto` skippt Mathe, sucht echte Frage |
+| Supply chain | `pyproject.toml` | **neu: mypy** (nur dev, `uv sync`; kein Laufzeit-Impact); geprüft |
+| Suite-Health | 3× randomisiert (`pytest-randomly`) | 3× grün, keine Flakes |
 
 ### Integration-Details (S7)
 
@@ -79,22 +82,24 @@ Kaltstart-Fall (feste `skip: 0.60`) skippte „Mittagsgericht" fälschlich;
 
 - **Laya allein erfüllt S7 nicht** (bewusst, S9): `p(none)` ist auf dem
   deutschen Set invertiert; nur `slm`/`hybrid`/`auto` erfüllen die Kernzusagen.
-- **Typen-Layer fehlt** (kein Typechecker im Projekt); nicht nachgerüstet, um
-  keine Abhängigkeit ohne Spec-Freigabe einzuführen.
-- **`hypothesis` fehlt**; Properties als stdlib-Sweep, schwächer als ein
-  echtes PBT-Tool.
-- **`pipeline._run_calibration` ist teuer** (ein Forward-Pass je Frage und Weg)
-  und läuft nur einmalig; Cache-Pfad getestet, aber kein Nebenläufigkeits-Schutz
-  (zwei Prozesse könnten parallel kalibrieren — letzter Schreibvorgang gewinnt).
+- **`hypothesis` fehlt** weiterhin; Properties als stdlib-Sweep, schwächer als
+  ein echtes PBT-Tool (kein automatisches Schrumpfen). Bewusst offen gelassen
+  (kein Nutzerauftrag); `mypy` wurde auf Auftrag nachgerüstet.
+- **`_run_calibration` ist teuer** (ein Forward-Pass je Frage und Weg). Das
+  Lock verhindert zwar doppelte Parallel-Läufe, macht die Einzelmessung aber
+  nicht schneller; sie läuft nur einmalig, danach aus dem Cache.
 - Der Kalibrierungssatz ist **generisch** (nur `needs_retrieval`), daher
   kalibriert `fanout`/`answer` auf Fallback, wenn kein KB-Gold vorliegt.
+
+**Rev. 4 – geschlossen:** Typenchecker (mypy, Baseline 5 → 0, Layer läuft) und
+Nebenläufigkeits-Schutz (Datei-Lock, genau eine Messung, S10) sind umgesetzt.
 
 ## Reproduzierbarkeit
 
 - Dev-Versionen: pytest 9.1.1, pytest-randomly 5.0.0, pytest-cov 7.1.0,
-  ruff 0.16.9 (aus `pyproject.toml`).
-- Mutationsskript persistiert: `scripts/mutation_check.sh` (führt die 7 Mutanten
-  aus, stellt den Arbeitsbaum nach jedem Mutanten wieder her).
+  ruff 0.16.9, mypy 2.3.1 (aus `pyproject.toml`).
+- Mutationsskript persistiert: `scripts/mutation_check.sh` (9 Mutanten,
+  stellt den Arbeitsbaum nach jedem Mutanten wieder her).
 - Ein Einstiegskommando (siehe `scripts/gauntlet.sh`).
-- Ohne Endpoint: `uv run pytest -m "not integration"` (139) und
+- Ohne Endpoint: `uv run pytest -m "not integration"` (150) und
   `uv run pytest -m integration` skippt die SLM-Tests mit Begründung.

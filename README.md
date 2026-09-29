@@ -81,9 +81,9 @@ Exit-Codes: 0 ok, 1 Fehler, 2 Konfiguration fehlt/ungültig.
 ## Tests / Gauntlet
 
 ```bash
-uv run pytest                        # 139 Unit-Tests (keine Modelle)
+uv run pytest                        # 150 Unit-Tests (keine Modelle)
 uv run pytest -m integration         # + echte Modelle (bge-m3, laya; SLM env-gated)
-bash scripts/gauntlet.sh             # kompletter Gauntlet (Suite, lint, cov, mutation, integration)
+bash scripts/gauntlet.sh             # Gauntlet: Suite, lint, mypy, cov, mutation, integration
 ```
 
 SLM-Tests brauchen `RR_ROUTER_SLM_BASE_URL` und `RR_ROUTER_SLM_MODEL`
@@ -92,6 +92,7 @@ Begründung. Evidence-Report: `docs/evidence-decision-stages.md`.
 
 ## Status
 
-Entscheidungswege (`laya`/`slm`/`hybrid`/`auto`), Kalibrierung, Pipeline und
-CLI implementiert; 139 Unit-Tests + 10 Integrationstests grün, ruff clean,
-Mutation 7/7. GAUNTLET-Report siehe `docs/evidence-decision-stages.md`.
+Entscheidungswege (`laya`/`slm`/`hybrid`/`auto`), Kalibrierung (mit Datei-Lock
+gegen Parallel-Läufe), Pipeline und CLI implementiert; 150 Unit-Tests +
+10 Integrationstests grün, ruff clean, mypy clean, Mutation 9/9.
+GAUNTLET-Report siehe `docs/evidence-decision-stages.md`.

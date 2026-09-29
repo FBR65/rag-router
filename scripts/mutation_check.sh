@@ -9,7 +9,8 @@ cd "$(dirname "$0")/.."
 ROUTE=src/rag_router/decision/route.py
 CAL=src/rag_router/calibration.py
 ROUTER=src/rag_router/router.py
-TESTS=(tests/test_decision_routes.py tests/test_calibration.py tests/test_router.py tests/test_pipeline.py)
+LOCK=src/rag_router/locking.py
+TESTS=(tests/test_decision_routes.py tests/test_calibration.py tests/test_router.py tests/test_pipeline.py tests/test_locking.py)
 
 suite_kills() {
   uv run pytest "${TESTS[@]}" -q >/tmp/mutation_check.out 2>&1
@@ -52,3 +53,9 @@ run_mutant router_skip_ge "$ROUTER" \
 run_mutant fanout_lt "$ROUTER" \
   "if ranked[0][1] < self._thresholds.fanout and len(ranked) >= 2:" \
   "if ranked[0][1] <= self._thresholds.fanout and len(ranked) >= 2:"
+run_mutant lock_stale_removed "$LOCK" \
+  "or time.time() - path.stat().st_mtime > stale_after" \
+  "or False"
+run_mutant lock_ignore_excl "$LOCK" \
+  "fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)" \
+  "fd = os.open(path, os.O_CREAT | os.O_WRONLY)"
