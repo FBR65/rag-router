@@ -1,0 +1,51 @@
+# rag-router Konfiguration (Beispiel)
+# Verzeichnis: db-Pfade relativ zu DIESER Datei.
+# Laya: Gruppennamen aus dem laya-Paket (english|multilingual|typed-decisions).
+# Reranker ist AKTIV (Vorgabe Frank): per-rag `rerank: false` zum Abschalten.
+
+router:
+  decision_backend: laya        # laya | llm
+  language: multilingual        # informell dokumentiert (Laya-Modell wählt Sprache)
+  laya:
+    model: multilingual         # convaiinnovations/laya + Revision multilingual
+    max_len: 1024
+    preload: false
+  thresholds:
+    skip: 0.60                  # p(none) >= skip -> nicht suchen
+    fanout: 0.55                # KB-Fuehrung < fanout -> Top-2 suchen
+    answer: 0.50                # p(answered) >= answer -> "beantwortet"
+    rrf_k: 60                   # RRF-Konstante (AurumVector-Default)
+  defaults:
+    top_k: 5
+    rerank: true                # bge-reranker-v2-m3 AKTIV
+    embed:
+      model: BAAI/bge-m3        # ein Modell fuer dense (+ sparse, AurumVector-Option)
+      device: cpu
+      batch_size: 16
+rags:
+  gemeinde:
+    description: "Hausregeln und Verwaltung der Gemeinde Aldersbrunn"
+    backend:
+      type: lancedb
+      db: ./data/lancedb
+      table: gemeinde_chunks
+    retriever: hybrid            # dense | sparse | fts | hybrid (+RRF)
+    top_k: 3
+    rerank: true
+  firma:
+    description: "Betriebsregeln der Firmen Haldensteg GmbH und Brunsiek Logistik"
+    backend:
+      type: lancedb
+      db: ./data/lancedb
+      table: firma_chunks
+    retriever: hybrid
+    top_k: 5
+    rerank: false                # Beispiel einer per-rag-Abschaltung
+  dienste:
+    description: "IT-Dienste und Tarife des Providers Quellnetz"
+    backend:
+      type: lancedb
+      db: ./data/lancedb
+      table: dienste_chunks
+    retriever: hybrid
+    top_k: 4

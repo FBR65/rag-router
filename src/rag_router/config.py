@@ -29,7 +29,7 @@ class ConfigError(RuntimeError):
 
 @dataclass(frozen=True)
 class LayaConfig:
-    model: str = "convaiinnovations/laya-multilingual"
+    model: str = "multilingual"
     max_len: int = 1024
     preload: bool = False
 
@@ -179,7 +179,14 @@ def _parse_laya(data: Any) -> LayaConfig:
     unknown = set(data) - known
     if unknown:
         raise _err(f"{where}: unbekannte Felder {sorted(unknown)}")
-    model = _get_str(data, "model", where, LayaConfig.model)
+    model = _get_str(data, "model", where, "multilingual")
+    # Layapaket-Gruppennamen (laya.DEFAULT_MODELS): english|multilingual|
+    # typed-decisions -> convaiinnovations/laya + Revision. Keine HF-ID.
+    if model not in ("english", "multilingual", "typed-decisions"):
+        raise _err(
+            f"{where}.model: {model!r} ungueltig"
+            " (verfuegbar: english, multilingual, typed-decisions)"
+        )
     max_len = _get_int(data, "max_len", where, LayaConfig.max_len)
     if max_len not in (512, 1024):
         raise _err(f"{where}.max_len muss 512 oder 1024 sein, ist {max_len}")

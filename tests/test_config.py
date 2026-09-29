@@ -8,7 +8,7 @@ BASE_YAML = """
 router:
   decision_backend: laya
   laya:
-    model: convaiinnovations/laya-multilingual
+    model: multilingual
     max_len: 1024
 rags:
   policy:
@@ -37,7 +37,7 @@ def test_minimal_config_loads_with_defaults(tmp_path) -> None:
     cfg = load_config(write(tmp_path, BASE_YAML))
 
     assert cfg.backend == "laya"
-    assert cfg.laya.model == "convaiinnovations/laya-multilingual"
+    assert cfg.laya.model == "multilingual"
     assert cfg.laya.max_len == 1024
     assert cfg.laya.preload is False
     assert cfg.thresholds.skip == 0.60

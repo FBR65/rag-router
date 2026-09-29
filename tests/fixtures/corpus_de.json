@@ -1,0 +1,27 @@
+{
+  "domains": {
+    "gemeinde": "fiktive Gemeinde Aldersbrunn (Hausregeln, Verwaltung)",
+    "firma": "fiktive Firmen Haldensteg GmbH und Brunsiek Logistik",
+    "dienste": "fiktiver Dienstanbieter Quellnetz (IT-Dienste)"
+  },
+  "documents": [
+    {"id": "gem-001", "text": "Urlaubsanträge für gemeindliche Bedienstete sind bis zum 15. März des Kalenderjahres beim Personalamt einzureichen; nicht verfallene Resturlaubs­stunden aus dem Vorjahr dürfen bis 30. April genommen werden."},
+    {"id": "gem-002", "text": "Die Bibliothek Aldersbrunn verleiht Medien 28 Tage lang. Verlängern ist zweimal möglich, sofern kein Vormerker vorliegt. Fernleihekosten betragen 1,50 Euro pro Band."},
+    {"id": "gem-003", "text": "Baulasten an gemeindlichen Wegen: Grünfläche vor dem Haus ist Eigentümerpflicht, Straßenschäden nimmt das Bauamt unter der Referenz STR-<Nummer> entgegen. Der Winterdienst beginnt bei 3 cm Neuschnee oder Glätte."},
+    {"id": "gem-004", "text": "Die Gemeinderatssitzungen finden alle zwei Monate am ersten Dienstag statt; Sitzungsvorlagen werden fünf Tage vorher im Amtsblatt veröffentlicht. Petitionen müssen neun Unterschriften nachweisen."},
+    {"id": "gem-005", "text": "Friedhofsordnung Aldersbrunn: Grabpflegepflicht ruht auf den Angehörigen, Gräberverlängerung kostet 85 Euro pro Jahrzehnt, Gedenksteine dürfen 60 Zentimeter über Boden ragen."},
+    {"id": "gem-006", "text": "Hundeverordnung: In Spielplätzen und an der Badezone des Mühlteichs gilt Leinen- und Beißkorbzwang; Kotbeseitigungsbeutel liegen am Grünamtslager bereit. Kampfhünde brauchen eine Halterlaubnis der Security-Personen-Verordnung."},
+    {"id": "fir-001", "text": "Haldensteg GmbH: Flexible Arbeitszeiten mit Kernzeit 10 bis 15 Uhr. Überstunden werden mit Faktor 1,25 abgegolten oder durch Zeitausgleich im selben Quartal."},
+    {"id": "fir-002", "text": "Haldensteg GmbH: Jahrestagung der Mitarbeiter findet im Spätherbst in Lemförde statt; Fahrtkostenerstattung 0,30 Euro pro Kilometer, Taxi ab 21 Uhr Erreichbarkeitsdiensts."},
+    {"id": "fir-003", "text": "Brunsiek Logistik: Gefahrguttransporte im Kesselwagen brauchen die ADR-Bescheinigung Klasse 3 und dürfen zwischen 4 und 21 Uhr unterwegs sein; Ladezeiten dokumentieren."},
+    {"id": "fir-004", "text": "Haldensteg GmbH: Das Betriebsprogramm sieht 24 Freischichten im Jahr vor; Warendatenprüfung läuft dienstags und donnerstags, Nachtschichtprüfung wechselt monatlich."},
+    {"id": "fir-005", "text": "Brunsiek Logistik: Fahrer brauchen nach 4,5 Fahrtzeitstunden 45 Minuten Pause; zwei Fahrtenpausen dürfen gesplittet werden, die erste mindestens 15 Minuten."},
+    {"id": "fir-006", "text": "Haldensteg GmbH: Kantine schließt um 14:30; Mittagsgericht kostet 3,10 Euro, vegetarische Variante 2,80 Euro. Essensgutschein für Schichtarbeiter je 5 Stunden Schicht."},
+    {"id": "die-001", "text": "Quellnetz: Der Tarif Quellnetz Basis enthält 12 Mbit/s Downstream und 4 Mbit/s Upstream, Telefonie ins deutsche Festnetz frei. Der Tarif Quellnetz Plus enthält 100 Mbit/s und IP-Telefonie."},
+    {"id": "die-002", "text": "Quellnetz: Der technische Support ist werktags 8 bis 18 Uhr erreichbar, samstags 9 bis 12 Uhr. Störungsmeldungen über die Hotline 4401 werden prioritär behandelt, der Rückruf innerhalb zweier Stunden verbindlich."},
+    {"id": "die-003", "text": "Quellnetz: Rechenzentrums-Kunden erhalten die Monitoring-Oberfläche kundengetrennt; Aufbewahrung von Netzprotokollen 30 Tage, Backups täglich 3 Uhr, Löschfrist 35 Tage."},
+    {"id": "die-004", "text": "Quellnetz: Die Vertragslaufzeit beträgt zwölf Monate, Kündigungsfrist drei Monate zum Monatsende; Tarifwechsel zum 1. des Folgemonats möglich, Wechsel in einen teureren Tarif jederzeit."},
+    {"id": "die-005", "text": "Quellnetz: Der Router der Baureihe QN-4 unterstützt WLan 6, Gastnetze mit isolierter IP und Freigabe von IPv6-Prefixes; Firmwareupdates erscheinen quartalsweise automatisch."},
+    {"id": "die-006", "text": "Quellnetz: Ein Zugangswechsel braucht Ausweiskopie und Meldebescheinigung; die Aktivierungsgebühr 49 Euro entfällt bei Selbstmontage des Modems, Auftragsbestätigung digital."}
+  ]
+}

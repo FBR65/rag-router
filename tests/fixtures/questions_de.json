@@ -1,0 +1,40 @@
+{
+  "meta": {
+    "structure": "8 Fragen je Route (gemeinde, firma, dienste) + 8 No-retrieval; je Wissensbasis 6 beantwortbar + 2 unbeantwortbar; originale Formulierungen, keine Übersetzung eines fremden Sets",
+    "gold_routes": {"gem": "gemeinde", "fir": "firma", "die": "dienste"}
+  },
+  "questions": [
+    {"id": "q-gem-1", "question": "Bis wann muss ich als Bediensteter der Gemeinde Aldersbrunn meinen Urlaubsantrag einreichen?", "gold_route": "gemeinde", "answerable": true, "evidence": ["15. März"]},
+    {"id": "q-gem-2", "question": "Wie lange kann ich Medien in der Bibliothek Aldersbrunn behalten?", "gold_route": "gemeinde", "answerable": true, "evidence": ["28 Tage"]},
+    {"id": "q-gem-3", "question": "Ab wie viel Neuschnee beginnt der Winterdienst in Aldersbrunn?", "gold_route": "gemeinde", "answerable": true, "evidence": ["3 cm"]},
+    {"id": "q-gem-4", "question": "Wie viel kostet die Verlängerung eines Grabes pro Jahrzehnt?", "gold_route": "gemeinde", "answerable": true, "evidence": ["85 Euro"]},
+    {"id": "q-gem-5", "question": "Wo gilt in Aldersbrunn Leinen- und Beißkorbzwang für Hunde?", "gold_route": "gemeinde", "answerable": true, "evidence": ["Spielplätzen", "Badezone"]},
+    {"id": "q-gem-6", "question": "Wie viele Unterschriften braucht eine Petition an den Gemeinderat?", "gold_route": "gemeinde", "answerable": true, "evidence": ["neun"]},
+    {"id": "q-gem-7", "question": "Gibt es in Aldersbrunn eine öffentliche Sauna? Wie hoch sind die Preise?", "gold_route": "gemeinde", "answerable": false, "evidence": []},
+    {"id": "q-gem-8", "question": "Wie beantrage ich einen Schwerbehindertenausweis für meinen Sohn über die Gemeinde?", "gold_route": "gemeinde", "answerable": false, "evidence": []},
+    {"id": "q-fir-1", "question": "Wann ist die Kernzeit bei der Haldensteg GmbH?", "gold_route": "firma", "answerable": true, "evidence": ["10 bis 15 Uhr"]},
+    {"id": "q-fir-2", "question": "Mit welchem Faktor werden Überstunden bei Haldensteg abgegolten?", "gold_route": "firma", "answerable": true, "evidence": ["1,25"]},
+    {"id": "q-fir-3", "question": "Wie viele Freischichten sieht das Betriebsprogramm der Haldensteg GmbH vor?", "gold_route": "firma", "answerable": true, "evidence": ["24"]},
+    {"id": "q-fir-4", "question": "Wie viel kostet das Mittagsgericht in der Kantine der Haldensteg GmbH?", "gold_route": "firma", "answerable": true, "evidence": ["3,10"]},
+    {"id": "q-fir-5", "question": "Was für eine Bescheinigung brauchen Kesselwagen bei Brunsiek Logistik?", "gold_route": "firma", "answerable": true, "evidence": ["ADR"]},
+    {"id": "q-fir-6", "question": "Wie lange müssen Fahrer bei Brunsiek nach 4,5 Stunden Fahrt pausieren?", "gold_route": "firma", "answerable": true, "evidence": ["45 Minuten"]},
+    {"id": "q-fir-7", "question": "Hat die Haldensteg GmbH eine eigene Betriebskita, und wie beantragt man einen Platz?", "gold_route": "firma", "answerable": false, "evidence": []},
+    {"id": "q-fir-8", "question": "Wie hoch ist der Gehaltstarifvertrag für Auszubildende bei Brunsiek Logistik?", "gold_route": "firma", "answerable": false, "evidence": []},
+    {"id": "q-die-1", "question": "Welche Bandbreite enthält der Tarif Quellnetz Basis?", "gold_route": "dienste", "answerable": true, "evidence": ["12 Mbit/s"]},
+    {"id": "q-die-2", "question": "Wann ist der technische Support von Quellnetz erreichbar?", "gold_route": "dienste", "answerable": true, "evidence": ["8 bis 18 Uhr"]},
+    {"id": "q-die-3", "question": "Wie lange werden Netzprotokolle im Rechenzentrum von Quellnetz aufbewahrt?", "gold_route": "dienste", "answerable": true, "evidence": ["30 Tage"]},
+    {"id": "q-die-4", "question": "Wie hoch ist die Kündigungsfrist bei Quellnetz?", "gold_route": "dienste", "answerable": true, "evidence": ["drei Monate"]},
+    {"id": "q-die-5", "question": "Welche WLAN-Generation unterstützt der Router QN-4?", "gold_route": "dienste", "answerable": true, "evidence": ["WLan 6"]},
+    {"id": "q-die-6", "question": "Was braucht Quellnetz für einen Zugangswechsel?", "gold_route": "dienste", "answerable": true, "evidence": ["Ausweiskopie", "Meldebescheinigung"]},
+    {"id": "q-die-7", "question": "Liefert Quellnetz auch Strom an den Zähler für meine Wallbox?", "gold_route": "dienste", "answerable": false, "evidence": []},
+    {"id": "q-die-8", "question": "Gibt es beim Quellnetz-Kundencenter eine Parkplatzreservierung für Besucher mit Elektroauto?", "gold_route": "dienste", "answerable": false, "evidence": []},
+    {"id": "q-no-1", "question": "Wie vielen Grad muss mein Ofen für Brot vorgewärmt werden?", "gold_route": "none", "answerable": false, "evidence": []},
+    {"id": "q-no-2", "question": "Schreib mir eine kurze Dankesnachricht an meine Nachbarn für die Paketannahme.", "gold_route": "none", "answerable": false, "evidence": []},
+    {"id": "q-no-3", "question": "Was ist 17 mal 23?", "gold_route": "none", "answerable": false, "evidence": []},
+    {"id": "q-no-4", "question": "Erzähl einen flotten Einzeiler über Montage.", "gold_route": "none", "answerable": false, "evidence": []},
+    {"id": "q-no-5", "question": "Wie kann ich in Python ein Wörterbuch nach Werten sortieren?", "gold_route": "none", "answerable": false, "evidence": []},
+    {"id": "q-no-6", "question": "Guten Morgen! Alles gut bei dir heute?", "gold_route": "none", "answerable": false, "evidence": []},
+    {"id": "q-no-7", "question": "Wie heißt die Hauptstadt von Portugal?", "gold_route": "none", "answerable": false, "evidence": []},
+    {"id": "q-no-8", "question": "Übersetze 'Zeit ist relativ' ins Französische für mich.", "gold_route": "none", "answerable": false, "evidence": []}
+  ]
+}
