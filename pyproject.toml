@@ -19,6 +19,7 @@ dependencies = [
     "scipy>=1.18.1",
     "transformers>=4.44.2,<5.0.0",
     "torch>=2.5.0",
+    "laya>=0.3.21",
 ]
 
 [tool.uv]

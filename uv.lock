@@ -941,6 +941,23 @@ wheels = [
 ]
 
 [[package]]
+name = "laya"
+version = "0.3.21"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "huggingface-hub" },
+    { name = "numpy" },
+    { name = "safetensors" },
+    { name = "torch", version = "2.14.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform == 'darwin'" },
+    { name = "torch", version = "2.14.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform != 'darwin'" },
+    { name = "transformers" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/53/6e/62c03b37ffa117ee49ed26984fd6db41c893979ef7620c46b5e8739f693a/laya-0.3.21.tar.gz", hash = "sha256:a3ddc55d12ffde42966076aef0981800ad00bfb60d015c06de47ebd2ba03f416", size = 555779, upload-time = "2026-09-27T19:41:36.368Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ca/6b/b48b4af2ceed6bc6885b2b40706a14f3e189ec5f7dd29ad406556a4a20ce/laya-0.3.21-py3-none-any.whl", hash = "sha256:6d6e73b2729d561643e79719c212b1159332fd25345f050efa5734d22e89ace3", size = 214549, upload-time = "2026-09-27T19:41:34.663Z" },
+]
+
+[[package]]
 name = "lxml"
 version = "6.1.3"
 source = { registry = "https://pypi.org/simple" }
@@ -1923,6 +1940,7 @@ source = { editable = "." }
 dependencies = [
     { name = "flagembedding" },
     { name = "lancedb" },
+    { name = "laya" },
     { name = "numpy" },
     { name = "openai" },
     { name = "pyyaml" },
@@ -1945,6 +1963,7 @@ dev = [
 requires-dist = [
     { name = "flagembedding", specifier = ">=1.4.2" },
     { name = "lancedb", specifier = ">=0.25" },
+    { name = "laya", specifier = ">=0.3.21" },
     { name = "numpy", specifier = ">=2.5.3" },
     { name = "openai", specifier = ">=3.20.0" },
     { name = "pyyaml", specifier = ">=6.0.3" },
