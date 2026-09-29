@@ -35,7 +35,7 @@ def sample(
 
 
 class TestSkipThreshold:
-    def test_separable_uses_gap_midpoint(self) -> None:
+    def test_separable_near_answerable_max(self) -> None:
         samples = [
             sample("no1", "none", 0.80, {"policy": 0.5, "news": 0.5}, False),
             sample("no2", "none", 0.90, {"policy": 0.5, "news": 0.5}, False),
@@ -43,8 +43,18 @@ class TestSkipThreshold:
             sample("ans2", "policy", 0.30, {"policy": 0.7, "news": 0.3}),
         ]
         thr = derive(samples)
-        assert 0.30 < thr.skip < 0.80
-        assert thr.skip == pytest.approx(0.55)
+        # knapp ueber max_ans (0.30), deutlich unter min_no (0.80)
+        assert 0.30 < thr.skip <= 0.80
+        assert thr.skip == pytest.approx(0.35)
+
+    def test_no_retrieval_still_skips_at_threshold(self) -> None:
+        samples = [
+            sample("no1", "none", 0.62, {"policy": 0.5, "news": 0.5}, False),
+            sample("ans1", "policy", 0.60, {"policy": 0.9, "news": 0.1}),
+        ]
+        thr = derive(samples)
+        assert thr.skip >= 0.60
+        assert 0.62 >= thr.skip
 
     def test_not_separable_prefers_no_retrieval(self) -> None:
         samples = [

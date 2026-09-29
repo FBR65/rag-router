@@ -124,21 +124,22 @@ class FakeClient:
 
 
 class TestSlmRoute:
-    def test_skip_yes_no_logprobs(self) -> None:
-        client = FakeClient([make_response([("A", -0.1), ("B", -2.0)])])
+    def test_skip_choice_returns_p_none(self) -> None:
+        # A=policy, B=news, C=none -> C stark -> p_none hoch
+        client = FakeClient([make_response([("C", -0.1), ("A", -2.0), ("B", -2.5)])])
         route = SlmRoute(client, model="m")
-        skip = route.skip("Frage")
-        # p_recall = softmax(A) dominiert
-        assert skip.p_recall > 0.8
+        skip = route.skip("Frage", RAG)
+        assert skip.p_none > 0.8
         assert skip.source == "logprobs"
         assert client.calls[0]["max_tokens"] == 1
         assert client.calls[0]["logprobs"] is True
 
     def test_skip_text_fallback(self) -> None:
-        client = FakeClient([make_response(None, content="B")])
+        # Text-Fallback: Antwort ist 'C' = none-Label bei 2 KBs
+        client = FakeClient([make_response(None, content="C")])
         route = SlmRoute(client, model="m")
-        skip = route.skip("Frage")
-        assert skip.p_recall == pytest.approx(0.0)
+        skip = route.skip("Frage", RAG)
+        assert skip.p_none == pytest.approx(1.0)
         assert skip.source == "text"
 
     def test_choose_logprobs_over_kb(self) -> None:
@@ -154,22 +155,26 @@ class TestSlmRoute:
         route = SlmRoute(client, model="m")
         route.choose("F", RAG)
         prompt = client.calls[0]["messages"][0]["content"]
-        assert "policy" in prompt and "news" in prompt
+        assert "Richtlinien" in prompt and "Nachrichten" in prompt
 
-    def test_skip_prompt_is_yes_no(self) -> None:
-        client = FakeClient([make_response([("A", -0.1), ("B", -2.0)])])
+    def test_skip_prompt_lists_kbs_and_none(self) -> None:
+        client = FakeClient([make_response([("A", -0.1), ("B", -2.0), ("C", -2.5)])])
         route = SlmRoute(client, model="m")
-        route.skip("F")
+        route.skip("F", RAG)
         prompt = client.calls[0]["messages"][0]["content"]
-        assert "Ja" in prompt or "ja" in prompt
-        assert "Nein" in prompt or "nein" in prompt
+        # KB-Beschreibungen UND none-Option stehen im Prompt
+        assert "Richtlinien" in prompt and "Nachrichten" in prompt
+        assert "Recherche" in prompt
 
     def test_split_uses_two_calls(self) -> None:
         client = FakeClient(
-            [make_response([("A", -0.1), ("B", -2.0)]), make_response([("A", -0.1), ("B", -2.0)])]
+            [
+                make_response([("A", -0.1), ("B", -2.0), ("C", -2.5)]),
+                make_response([("A", -0.1), ("B", -2.0)]),
+            ]
         )
         route = SlmRoute(client, model="m")
-        route.skip("F")
+        route.skip("F", RAG)
         route.choose("F", RAG)
         assert len(client.calls) == 2
 

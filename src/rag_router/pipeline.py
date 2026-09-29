@@ -69,9 +69,10 @@ class RagRouter:
     ) -> None:
         self._config = config
         skip, fanout, answer = _resolve_thresholds(config, calibration)
+        self._thresholds = DecisionThresholds(skip=skip, fanout=fanout, answer=answer)
         self._engine = RouterDecisionEngine(
             decision,
-            thresholds=DecisionThresholds(skip=skip, fanout=fanout, answer=answer),
+            thresholds=self._thresholds,
         )
         self._engine.set_rag_descriptions(
             {key: rag.description for key, rag in config.rags.items()}
@@ -183,7 +184,7 @@ class RagRouter:
         best = max(checks, key=lambda c: c.p_answered)
         final = (
             "answered"
-            if best.p_answered >= self._config.thresholds.answer
+            if best.p_answered >= self._thresholds.answer
             else "not_found"
         )
         return RouterResult(decision=decision, hits=all_hits, check=best, final=final)

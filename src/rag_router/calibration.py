@@ -62,10 +62,16 @@ def _skip_threshold(samples: Sequence[CalibrationSample]) -> float:
     if min_no is None:
         return FALLBACK_SKIP
     max_ans = _max_answerable_nonretrieval(samples)
-    # Bevorzugt: kleiner Wert, der alle no-retrieval skippt und keine echte
-    # Frage. Separierbar <=> max_ans < min_no -> Mitte der Luecke.
-    if max_ans is not None and max_ans < min_no:
-        return (max_ans + min_no) / 2.0
+    if max_ans is None:
+        # Keine beantwortbaren Fragen: konservativ (moeglichst wenig skippen).
+        return 0.0
+    if max_ans < min_no:
+        # Separierbar. Schwelle KNAPP ueber der hoechsten echten Frage, nicht in
+        # der Lueckenmitte: die Mitte ist empfindlich gegen einen einzelnen
+        # Ausreisser knapp unter min_no und skippt dann echte Fragen mit.
+        # Prioritaet (Spec §1): eine echte Frage darf nie geskippt werden,
+        # eine unnoetige Suche ist billig.
+        return max_ans + 0.10 * (min_no - max_ans)
     # Nicht separierbar: min_no (Prioritaet: no-retrieval skippt).
     return min_no
 

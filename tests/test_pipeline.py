@@ -276,3 +276,28 @@ class TestAutoCalibration:
         decision = router.route("F")
         # p_none = 0.2 < 0.7 -> suchen
         assert "none" not in decision.routes
+
+    def test_route_and_fetch_uses_calibrated_answer(self) -> None:
+        """Regression: answer-Threshold 'auto' (None) darf route_and_fetch nicht brechen."""
+        from rag_router.calibration import CalibrationProfile
+
+        profile = CalibrationProfile(
+            decision_route="laya",
+            answer_backend="laya",
+            skip=0.7,
+            fanout=0.4,
+            answer=0.95,
+            cascade_lo=0.4,
+            cascade_hi=0.6,
+        )
+        cfg = make_config(thresholds=Thresholds(skip=None, fanout=None, answer=None))
+        router = RagRouter.injected(
+            config=cfg,
+            decision=SplitDecision(0.9, {"policy": 0.9, "news": 0.1}),
+            backends={"policy": FakeBackend("policy", ["p"])},
+            checker=FakeChecker(0.8),
+            calibration=profile,
+        )
+        result = router.route_and_fetch("F")
+        # answer=0.95 aus Profil -> 0.8 < 0.95 -> not_found (kein TypeError)
+        assert result.final == "not_found"

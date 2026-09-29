@@ -162,19 +162,6 @@ class LayaRoute:
 # --- SLM -------------------------------------------------------------------- #
 
 _LABELS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-_SKIP_LABELS = {"recall": "A", "none": "B"}
-
-
-def _build_slm_skip_prompt(question: str) -> str:
-    return (
-        "Bezieht sich die folgende Frage auf Dokumente und interne Regeln der "
-        "konfigurierten Wissensbasen, oder ist sie Small Talk, Mathematik, "
-        "Allgemeinwissen oder Schreib-/Programmierhilfe?\n\n"
-        "A = Ja, eine Dokumentenfrage; es lohnt sich, die Wissensbasen zu durchsuchen.\n"
-        "B = Nein, keine Dokumentenfrage; Recherche ist unnoetig.\n\n"
-        f"Frage: {question}\n\n"
-        "Antworte ausschliesslich mit dem Buchstaben."
-    )
 
 
 def _build_slm_kb_prompt(question: str, rag_descriptions: Mapping[str, str]) -> str:
@@ -189,8 +176,27 @@ def _build_slm_kb_prompt(question: str, rag_descriptions: Mapping[str, str]) -> 
     )
 
 
+def _build_slm_skip_prompt(question: str, rag_descriptions: Mapping[str, str]) -> tuple[str, str]:
+    """Choice-Prompt ueber alle KBs + 'none'; gibt (Prompt, none-Label).
+
+    Die KB-Beschreibungen mitzugeben ist entscheidend: ein abstraktes
+    'Dokumente?'-yes/no trennt auf dem deutschen Set kaum (siehe S9), die
+    konkrete Auswahl mit 'none' dagegen schon.
+    """
+    items = list(rag_descriptions.items())
+    lines = [f"{_LABELS[i]}. {desc}" for i, (key, desc) in enumerate(items)]
+    none_label = _LABELS[len(items)]
+    prompt = (
+        f"{KB_INSTRUCTIONS} Waehle genau eine Option.\n\n"
+        f"Frage: {question}\n\n" + "\n".join(lines)
+        + f"\n{none_label}. {NO_RETRIEVAL_DESCRIPTION}\n\n"
+        "Antworte ausschliesslich mit dem Buchstaben."
+    )
+    return prompt, none_label
+
+
 class SlmRoute:
-    """D1 = yes/no-logprobs-Prompt, D2 = A/B/...-Prompt (je ein Call)."""
+    """D1 = choice ueber KBs+none (p_none), D2 = choice ueber die KBs."""
 
     name = "slm"
 
@@ -247,14 +253,17 @@ class SlmRoute:
     def skip(
         self, question: str, rag_descriptions: Mapping[str, str] | None = None
     ) -> SkipDist:
-        prompt = _build_slm_skip_prompt(question)
-        probs = self._logprobs(prompt, _SKIP_LABELS)
+        rag = rag_descriptions or {}
+        labels = {key: _LABELS[i] for i, key in enumerate(rag)}
+        prompt, none_label = _build_slm_skip_prompt(question, rag)
+        valid = {**labels, none_label: none_label}
+        probs = self._logprobs(prompt, valid)
         if probs is not None:
-            p_recall = float(probs.get(_SKIP_LABELS["recall"], 0.0))
-            return SkipDist(p_recall=p_recall, raw=probs, source="logprobs")
+            p_none = float(probs.get(none_label, 0.0))
+            return SkipDist(p_recall=1.0 - p_none, raw=probs, source="logprobs")
         label = self._text_label(prompt)
-        p_recall = 1.0 if label == _SKIP_LABELS["recall"] else 0.0
-        return SkipDist(p_recall=p_recall, raw=label, source="text")
+        p_none = 1.0 if label == none_label else 0.0
+        return SkipDist(p_recall=1.0 - p_none, raw=label, source="text")
 
     def choose(
         self, question: str, rag_descriptions: Mapping[str, str]
