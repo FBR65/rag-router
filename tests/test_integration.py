@@ -4,7 +4,7 @@ Laeuft NUR mit `uv run pytest -m integration` (pytest.ini schliesst sie im
 Normal-Run aus). Erwartet: erstes Laden von bge-m3 + laya-multilingual
 (Download), danach CPU-Latenz im Sekundenbereich je Frage.
 Der LLM-Backend-Test benoetigt OLLAMA_BASE_URL + OLLAMA_API_KEY (Model
-RR_ROUTER_LLM, Default: deepseek-v3.1:671b-cloud); ohne Env skippt er mit
+RR_ROUTER_LLM, Default: deepseek-v4.1-flash:cloud); ohne Env skippt er mit
 Begruendung.
 """
 
@@ -159,7 +159,7 @@ class TestLlmPipeline:
             pytest.skip(reason)
         base = os.environ.get("OLLAMA_BASE_URL", "")
         key = os.environ.get("OLLAMA_API_KEY", "")
-        model = os.environ.get("RR_ROUTER_LLM", "deepseek-v4-flash:0731-cloud")
+        model = os.environ.get("RR_ROUTER_LLM", "deepseek-v4.1-flash:cloud")
         # Eigenes config mit backend llm
         tmp_path = tmp_path_factory.mktemp("llminteg")
         example = Path(__file__).parent.parent / "config.example.yaml"
