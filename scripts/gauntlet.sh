@@ -16,7 +16,7 @@ uv run mypy
 echo "== 4/6 Coverage (Unit) =="
 uv run pytest -q --cov=rag_router --cov-report=term-missing
 
-echo "== 5/6 Mutation (7 Mutanten) =="
+echo "== 5/6 Mutation (9 Mutanten) =="
 bash scripts/mutation_check.sh
 
 echo "== 6/6 Integration (nur mit Endpoint) =="
