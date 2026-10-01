@@ -75,6 +75,10 @@ class EmbedConfig:
     model: str = "BAAI/bge-m3"
     device: str = "cpu"
     batch_size: int = 16
+    # Optional: llama-swap/OpenAI-kompatibler Endpunkt (dann laeuft bge-m3 im
+    # llama-server statt im Prozess; kein torch-Modell, kein FlagEmbedding).
+    base_url: str | None = None
+    api_key: str = "not-needed"
 
 
 @dataclass(frozen=True)
@@ -336,17 +340,26 @@ def _parse_embed(data: Any) -> EmbedConfig:
     where = "router.defaults.embed"
     data = _require_map(data, where) if data is not None else {}
     data = data or {}
-    known = {"model", "device", "batch_size"}
+    known = {"model", "device", "batch_size", "base_url", "api_key"}
     unknown = set(data) - known
     if unknown:
         raise _err(f"{where}: unbekannte Felder {sorted(unknown)}")
     batch_size = _get_int(data, "batch_size", where, EmbedConfig.batch_size)
     if batch_size < 1:
         raise _err(f"{where}.batch_size muss >= 1 sein, ist {batch_size}")
+    base_url = (
+        _get_str(data, "base_url", where, "")
+        if data.get("base_url")
+        else None
+    )
+    if base_url is not None and not base_url.startswith(("http://", "https://")):
+        raise _err(f"{where}.base_url muss mit http:// oder https:// beginnen")
     return EmbedConfig(
         model=_get_str(data, "model", where, EmbedConfig.model),
         device=_get_str(data, "device", where, EmbedConfig.device),
         batch_size=batch_size,
+        base_url=base_url,
+        api_key=_get_str(data, "api_key", where, EmbedConfig.api_key),
     )
 
 

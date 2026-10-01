@@ -112,13 +112,21 @@ class RagRouter:
         device: str | None = None,
     ) -> RagRouter:
         """Aus geladener Konfiguration: echte Backends + echte Modelle."""
-        from rag_router.embedding import BgeM3Embedder
+        from rag_router.embedding import BgeM3Embedder, HttpEmbedder
 
-        embedder = BgeM3Embedder(
-            model_name=config.defaults.embed.model,
-            device=device or config.defaults.embed.device,
-            batch_size=config.defaults.embed.batch_size,
-        )
+        embed_cfg = config.defaults.embed
+        if embed_cfg.base_url:
+            embedder: Any = HttpEmbedder.from_settings(
+                base_url=embed_cfg.base_url,
+                model=embed_cfg.model,
+                api_key=embed_cfg.api_key,
+            )
+        else:
+            embedder = BgeM3Embedder(
+                model_name=embed_cfg.model,
+                device=device or embed_cfg.device,
+                batch_size=embed_cfg.batch_size,
+            )
         backends: dict[str, RagBackend] = {}
         for key, rag in config.rags.items():
             backend_cls = registry[rag.backend.type]

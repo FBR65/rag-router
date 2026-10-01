@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from rag_router.embedding import BgeM3Embedder
+from rag_router.embedding import BgeM3Embedder, HttpEmbedder
 
 
 class StubFlagModel:
@@ -39,3 +39,55 @@ class TestBgeM3Embedder:
     def test_requires_settings_or_stub(self) -> None:
         with pytest.raises(ValueError):
             BgeM3Embedder(model_name=None, stub=None)  # type: ignore[arg-type]
+
+
+class _Embedding:
+    def __init__(self, index: int, values: list[float]) -> None:
+        self.index = index
+        self.embedding = values
+
+
+class _Response:
+    def __init__(self, data: list[_Embedding]) -> None:
+        self.data = data
+
+
+class _EmbeddingsApi:
+    def __init__(self, seen: list[dict]) -> None:
+        self._seen = seen
+
+    def create(self, *, model: str, input: list[str]) -> _Response:
+        self._seen.append({"model": model, "input": list(input)})
+        # Absichtlich verdreht: der Client muss nach `index` sortieren.
+        return _Response(
+            [
+                _Embedding(1, [1.0, 1.5]),
+                _Embedding(0, [0.0, 0.5]),
+            ]
+        )
+
+
+class _EmbeddingClient:
+    def __init__(self) -> None:
+        self.seen: list[dict] = []
+        self.embeddings = _EmbeddingsApi(self.seen)
+
+
+class TestHttpEmbedder:
+    """bge-m3 ueber llama-swap: nur die Client-Anbindung, kein Netz."""
+
+    def test_embed_posts_and_sorts_by_index(self) -> None:
+        client = _EmbeddingClient()
+        embedder = HttpEmbedder.from_stub(client)
+        vectors = embedder.embed(["eins", "zwei"])
+        assert vectors == [[0.0, 0.5], [1.0, 1.5]]
+        assert client.seen == [{"model": "bge-m3-gguf", "input": ["eins", "zwei"]}]
+
+    def test_embed_casts_to_float(self) -> None:
+        client = _EmbeddingClient()
+        embedder = HttpEmbedder.from_stub(client)
+        assert all(isinstance(value, float) for value in embedder.embed(["x"])[0])
+
+    def test_from_settings_needs_base_url(self) -> None:
+        with pytest.raises(TypeError):
+            HttpEmbedder.from_settings(model="bge-m3-gguf")  # type: ignore[call-arg]

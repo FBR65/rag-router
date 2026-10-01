@@ -45,6 +45,11 @@ router:
       model: BAAI/bge-m3
       device: cpu
       batch_size: 16
+      # Optional: bge-m3 ueber llama-swap (llama-server mit --embeddings) statt
+      # FlagEmbedding im Prozess. Dann laeuft das Embedding im Container:
+      # base_url: "${RR_ROUTER_EMBED_BASE_URL}"
+      # api_key: not-needed
+      # model hierfuer auf den llama-swap-Namen setzen: bge-m3-gguf
 rags:
   gemeinde:
     description: "Hausregeln und Verwaltung der Gemeinde Aldersbrunn"

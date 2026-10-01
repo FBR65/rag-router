@@ -101,5 +101,49 @@ Nebenläufigkeits-Schutz (Datei-Lock, genau eine Messung, S10) sind umgesetzt.
 - Mutationsskript persistiert: `scripts/mutation_check.sh` (9 Mutanten,
   stellt den Arbeitsbaum nach jedem Mutanten wieder her).
 - Ein Einstiegskommando (siehe `scripts/gauntlet.sh`).
-- Ohne Endpoint: `uv run pytest -m "not integration"` (150) und
+- Ohne Endpoint: `uv run pytest -m "not integration"` (158) und
   `uv run pytest -m integration` skippt die SLM-Tests mit Begründung.
+
+---
+
+## Nachtrag 2026-10-01: Lauf gegen llama-swap (alle Modelle auf `:8080`)
+
+Alle Modelle laufen jetzt über den llama-swap-Container
+(`http://127.0.0.1:8080/v1`): `bge-m3-gguf` (Embeddings), SLM, Laya lokal.
+
+**Geänderte Umgebung (nicht Repo-Code):** `bge-m3-gguf` in
+`/home/speedy/Dokumente/dev/container/llama_swap/config.yaml` startet den
+llama-server nun mit `--embeddings`; ohne das antwortet `/v1/embeddings` mit
+HTTP 501 (`This server does not support embeddings`). Podman-Container
+`llama-swapel` wurde neu gestartet.
+
+**Neuer Code:** `router.defaults.embed.base_url`/`api_key` (optional). Ist
+`base_url` gesetzt, nutzt `RagRouter.from_config` `HttpEmbedder`
+(`/v1/embeddings`) statt `BgeM3Embedder`/FlagEmbedding im Prozess. Das ist
+dasselbe Modell (bge-m3), verifiziert: cos(Endpoint, lokal) = 0.9995 bei
+identischem Ranking, beide 1024-dim und normiert. Tests: `TestHttpEmbedder`
+(3) + `test_config` Embed-Endpunkt (5).
+
+### Ergebnis (bge-m3-gguf über llama-swap)
+
+| Lauf | Embeddings | SLM (`RR_ROUTER_SLM_MODEL`) | Ergebnis |
+|---|---|---|---|
+| A | lokal (FlagEmbedding) | Qwen2.5-Coder-7B | 10 passed |
+| B | lokal | Qwen2.5-7B-Instruct | **1 failed**: `test_no_false_skip_on_answerable` |
+| C | lokal | gemma-4-12B-TurboQuant | 10 passed |
+| D | **llama-swap** | Qwen2.5-7B-Instruct | **1 failed**: dito |
+| E | **llama-swap** | gemma-4-12B-TurboQuant | 10 passed (567 s) |
+| F | **llama-swap** | *(kein SLM)* | `TestLayaPipeline` 3 passed, 7 skipped; Median-Latenz 0.69 s (vorher 0.95 s mit lokalem bge-m3) |
+
+**Belegte Grenze (neu, offen):** `q-gem-4` („Wie viel kostet die Verlängerung
+eines Grabes pro Jahrzehnt?", Gold `gemeinde`) wird von **Qwen2.5-7B-Instruct**
+hart als `none` gewählt (`p(none) = 1.000`, Top-1 mit logprob −0.000). Derselbe
+Prompt über Qwen2.5-Coder-7B ergibt `D` (falsch) mit p(none) ≈ 0.72,
+über **gemma-4-12B** ≈ 0.08 → richtig geroutet. Kein Code-Defekt, sondern eine
+SLM-Grenze (der Wortlaut „pro Jahrzehnt" ohne KB-Kontext); Test 2 bleibt für
+Modelle mit dieser Antwort rot. `gemma-4-12B` erfüllt die vier Kernzusagen (S7)
+vollständig, ebenso wie Coder.
+
+**Kalibrierung (gemma, auto):** `route_accuracy 1.0`, `skip = 0.208`
+(bei Coder 0.881) — der Unterschied zeigt die Modellabhängigkeit der
+Auto-Schwelle; beide erfüllen S7 auf ihren Daten.

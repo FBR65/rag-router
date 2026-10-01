@@ -315,3 +315,52 @@ def test_unknown_slm_field_rejected(tmp_path, monkeypatch) -> None:
     )
     with pytest.raises(ConfigError, match="magie"):
         load_config(write(tmp_path, yml))
+
+
+def test_embed_endpoint_optional_defaults_none(tmp_path) -> None:
+    cfg = load_config(write(tmp_path, BASE_YAML))
+    assert cfg.defaults.embed.base_url is None
+    assert cfg.defaults.embed.api_key == "not-needed"
+
+
+def test_embed_endpoint_loads(tmp_path) -> None:
+    yml = BASE_YAML.replace(
+        "rags:\n",
+        "  defaults:\n"
+        "    embed:\n"
+        "      model: bge-m3-gguf\n"
+        "      base_url: http://127.0.0.1:8080/v1\n"
+        "      api_key: not-needed\n"
+        "rags:\n",
+    )
+    cfg = load_config(write(tmp_path, yml))
+    assert cfg.defaults.embed.model == "bge-m3-gguf"
+    assert cfg.defaults.embed.base_url == "http://127.0.0.1:8080/v1"
+
+
+def test_embed_endpoint_env_expanded(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("RR_TEST_EMBED", "http://127.0.0.1:8080/v1")
+    yml = BASE_YAML.replace(
+        "rags:\n",
+        "  defaults:\n    embed:\n      base_url: ${RR_TEST_EMBED}\nrags:\n",
+    )
+    cfg = load_config(write(tmp_path, yml))
+    assert cfg.defaults.embed.base_url == "http://127.0.0.1:8080/v1"
+
+
+def test_embed_endpoint_scheme_rejected(tmp_path) -> None:
+    yml = BASE_YAML.replace(
+        "rags:\n",
+        "  defaults:\n    embed:\n      base_url: 127.0.0.1:8080\nrags:\n",
+    )
+    with pytest.raises(ConfigError, match="base_url"):
+        load_config(write(tmp_path, yml))
+
+
+def test_embed_endpoint_unknown_field_rejected(tmp_path) -> None:
+    yml = BASE_YAML.replace(
+        "rags:\n",
+        "  defaults:\n    embed:\n      base_url: http://x/v1\n      magie: 2\nrags:\n",
+    )
+    with pytest.raises(ConfigError, match="magie"):
+        load_config(write(tmp_path, yml))

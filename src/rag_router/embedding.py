@@ -50,3 +50,46 @@ class BgeM3Embedder:
 
         dense = output.get("dense_vecs") if isinstance(output, dict) else output
         return [row.tolist() for row in np.asarray(dense)]
+
+
+class HttpEmbedder:
+    """bge-m3 ueber einen OpenAI-kompatiblen Endpunkt (`/v1/embeddings`).
+
+    Nutzt das Modell im llama-swap-Container (llama-server mit `--embeddings`),
+    statt torch/FlagEmbedding im Prozess zu laden. Gleiches Modell, gleiche
+    Vektor-Dimension (1024); die API liefert bereits normierte Vektoren.
+    """
+
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        model: str = "bge-m3-gguf",
+        api_key: str = "not-needed",
+        timeout: float = 300.0,
+        client: Any = None,
+    ) -> None:
+        self._model = model
+        if client is None:
+            from openai import OpenAI
+
+            client = OpenAI(
+                base_url=base_url, api_key=api_key, timeout=timeout, max_retries=0
+            )
+        self._client = client
+
+    @classmethod
+    def from_settings(
+        cls, *, base_url: str, model: str, api_key: str = "not-needed"
+    ) -> HttpEmbedder:
+        return cls(base_url=base_url, model=model, api_key=api_key)
+
+    @classmethod
+    def from_stub(cls, stub: Any, *, model: str = "bge-m3-gguf") -> HttpEmbedder:
+        """Aus injiziertem OpenAI-Stub (Tests)."""
+        return cls(base_url="http://stub.invalid/v1", model=model, client=stub)
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        response = self._client.embeddings.create(model=self._model, input=texts)
+        data = sorted(response.data, key=lambda item: item.index)
+        return [[float(value) for value in item.embedding] for item in data]

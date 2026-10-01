@@ -35,7 +35,17 @@ pytestmark = pytest.mark.integration
 
 def _example_text(tmp_path: Path) -> str:
     text = EXAMPLE.read_text(encoding="utf-8")
-    return text.replace("db: ./data/lancedb", f"db: {tmp_path}/lancedb")
+    text = text.replace("db: ./data/lancedb", f"db: {tmp_path}/lancedb")
+    # Embeddings optional ueber llama-swap (bge-m3-gguf) statt FlagEmbedding:
+    base = os.environ.get("RR_ROUTER_EMBED_BASE_URL")
+    if base:
+        model = os.environ.get("RR_ROUTER_EMBED_MODEL", "bge-m3-gguf")
+        text = text.replace(
+            "      model: BAAI/bge-m3\n",
+            f"      model: {model}\n      base_url: {base}\n",
+            1,
+        )
+    return text
 
 
 def _laya_config(tmp_path: Path) -> Path:
